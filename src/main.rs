@@ -2,7 +2,12 @@ use log::LevelFilter;
 use log::{debug, info, warn, error};
 use rand::prelude::SliceRandom;
 use rand::thread_rng;
+use crate::classification::classify;
 use crate::cleanup::cleanup;
+use crate::config::{BLOCKSIZE, K};
+use crate::permutation::permutate_blocks;
+use crate::sampling::sample;
+use crate::sort::sort;
 
 mod sampling;
 mod base_case;
@@ -17,13 +22,103 @@ fn main() {
         .filter_level(LevelFilter::Debug)
         .init();
 
-    //let mut arr: Vec<u32> = (1..65).collect();
-    //arr.shuffle(&mut thread_rng());
+    //for j in 0..100000 {
+    loop{
+        let mut arr: Vec<u32> = (1..65).collect();
+        // shuffle array each iteration to get different results
+        let mut trng = thread_rng();
+        arr.shuffle(&mut trng);
+        sort::sort(&mut arr);
+
+        for i in 0..arr.len() {
+            if arr[i] != (i + 1) as u32 {
+                println!("Error at index {}: Expected {}, got {}", i, i + 1, arr[i]);
+            }
+        }
+        break;
+    }
+
+    //let mut arr = [1, 2, 3, 4, 5, 6, 7, 8, 9, 24, 36, 34, 11, 42, 33, 10, 17, 20, 12, 23, 39, 29, 28, 27, 25, 37, 32, 16, 19, 31, 41, 21, 40, 30, 13, 38, 14, 35, 15, 22, 26, 18, 44, 43, 45, 52, 50, 49, 48, 51, 46, 47, 54, 59, 56, 57, 53, 58, 55, 60, 61, 63, 62, 64];
     //sort::sort(&mut arr);
 
-    let mut vec = vec![5, 9, 10, 13, 15, 18, 20, 29, 30, 31, 37, 54, 56, 62, 63, 49, 48, 47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 58, 36, 35, 34, 33, 32, 60, 50, 51, 28, 27, 26, 25, 24, 23, 22, 21, 52, 19, 57, 17, 16, 64, 14, 59, 12, 11, 61, 55, 8, 7, 6, 53, 4, 3, 2, 1];
-    sort::sort(&mut vec);
 
+    //let mut arr = [19, 25, 24, 20, 50, 61, 53, 58, 12, 13, 11, 7, 6, 10, 9, 8, 19, 25, 24, 20, 14, 16, 21, 17, 23, 15, 18, 22, 26, 36, 31, 28, 29, 27, 35, 33, 39, 46, 44, 40, 38, 42, 45, 43, 23, 15, 18, 22, 48, 57, 52, 54, 50, 61, 53, 58, 60, 47, 55, 56, 49, 63, 62, 64];
+    //let mut decision_tree = [25, 5, 46, 2, 13, 36, 61];
+    //let mut blocks = vec![vec![1, 2], vec![4, 5, 3], vec![], vec![], vec![34, 30, 32], vec![37, 41], vec![51,59,49], vec![63, 62, 64]];
+    //let mut element_count = [2, 3, 8, 12, 11, 10, 15, 3];
+    //let pointers = [(0, -4), (4, 0), (16, 12), (28, 20), (36, 32), (44, 40), (60, 44), (64, 44)];
+    //let boundaries = [0, 4, 8, 16, 28, 36, 48, 64, 64];
+    //let mut overflow_buffer = vec![];
+    //overflow_buffer.reserve(BLOCKSIZE);
+    //
+
+    //let mut arr = [8, 9, 1, 5, 7, 2, 3, 6, 29, 33, 25, 28, 47, 52, 44, 46, 15, 20, 17, 19, 29, 33, 25, 28, 26, 24, 30, 22, 32, 23, 31, 27, 38, 36, 41, 42, 35, 43, 37, 40, 38, 36, 41, 42, 47, 52, 44, 46, 50, 51, 45, 48, 54, 62, 61, 60, 58, 56, 63, 57, 64, 55, 59, 53];
+    //let mut decision_tree = [20, 12, 43, 9, 14, 33, 52];
+    //let mut blocks = vec![vec![4], vec![10, 12, 11], vec![13, 14], vec![18, 16], vec![21], vec![39, 34], vec![49], vec![]];
+    //let mut element_count = [9, 3, 2, 6, 13, 10, 9, 12];
+    //let mut pointers = [(8, 0), (12, 8), (12, 8), (20, 16), (32, 28), (44, 40), (52, 48), (64, 48)];
+    //let mut boundaries = [0, 12, 12, 16, 20, 36, 44, 52, 64];
+    //let mut overflow_buffer = vec![];
+    //overflow_buffer.reserve(BLOCKSIZE);
+
+    //
+    //cleanup(&mut arr, &boundaries, &element_count, &pointers, &mut blocks, &overflow_buffer);
+
+
+    //println!("Output: {:?}", arr);
+
+    //let mut vec = vec![5, 9, 10, 13, 15, 18, 20, 29, 30, 31, 37, 54, 56, 62, 63, 49, 48, 47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 58, 36, 35, 34, 33, 32, 60, 50, 51, 28, 27, 26, 25, 24, 23, 22, 21, 52, 19, 57, 17, 16, 64, 14, 59, 12, 11, 61, 55, 8, 7, 6, 53, 4, 3, 2, 1];
+    //sort::sort(&mut vec);
+
+    //let mut input = [37, 54, 49, 48, 47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 36, 35, 56, 62, 58, 60, 34, 33, 32, 50, 20, 29, 28, 27, 26, 25, 24, 23, 15, 18, 17, 16, 10, 13, 12, 11, 57, 59, 61, 55, 5, 9, 8, 7, 6, 4, 3, 2, 63, 64, 65, 66, 1, 14, 22, 21, 19, 30, 31, 51, 52, 53, 67];
+    //let decision_tree = [29, 13, 54, 9, 18, 31, 62];
+    //let classified_elements = 56;
+    //let element_count = [9, 4, 5, 11, 2, 23, 8, 5];
+    //let mut pointers = [(0, 0); K];
+    //let mut boundaries = [0, 12, 16, 20, 32, 32, 56, 64, 64];
+    //let mut overflow_buffer = [0; BLOCKSIZE];
+    //let len = input.len();
+    //permutate_blocks(&mut input, &decision_tree, classified_elements, &element_count, &mut pointers, &mut boundaries, &mut overflow_buffer, 0, len);
+    //println!("Input after permutation: {:?}", input);
+    //
+    //let mut blocks: Vec<Vec<u32>> = vec![vec![1], vec![], vec![14], vec![22, 21, 19], vec![30, 31], vec![51, 52, 53], vec![], vec![67]];
+    //
+    //cleanup(&mut input, &boundaries, &element_count, &pointers, &mut blocks, &overflow_buffer);
+    //println!("Input after cleanup: {:?}", input);
+
+    // RECURSION
+    //let mut arr = [5, 9, 8, 7, 6, 4, 3, 2, 1, 13, 12, 11, 10, 17, 16, 14, 15, 18, 21, 22, 26, 25, 24, 23, 20, 29, 28, 27, 19, 31, 30, 51, 43, 42, 41, 40, 47, 46, 45, 44, 39, 38, 36, 35, 37, 54, 49, 48, 34, 33, 32, 50, 53, 52, 61, 55, 56, 62, 58, 60, 57, 59, 64, 63];
+    //debug!("Input: {:?}", arr);
+    //
+    //// buffer for decision tree/pointer/boundaries
+    //let mut decision_tree: Vec<u32> = vec![];
+    //let mut pointers = [(0, 0); K];
+    //let mut boundaries = [0; K+1];
+    //
+    //// local buffers
+    //let mut blocks: Vec<Vec<u32>> = vec![vec![]; K];
+    //let mut element_count: [u32; K] = [0; K];
+    //
+    //sample(&mut arr, &mut decision_tree, 31, 52);
+    //debug!("Array after sampling: {:?}", arr);
+    //info!("Decision Tree: {:?}", decision_tree);
+
+    //debug!("Overwriting decision tree");
+    //decision_tree = vec![29, 13, 54, 9, 18, 31, 62];
+    //
+    //let classified_elements = classify(&mut arr, &decision_tree, &mut blocks, &mut element_count, 0, arr.len());
+    //debug!("Array after classification: {:?}", arr);
+    //info!("Classified Elements: {}", classified_elements);
+    //info!("Element Count: {:?}", element_count);
+    //info!("Blocks: {:?}", blocks);
+    //
+    //permutate_blocks(&mut arr, &decision_tree, classified_elements, &element_count, &mut pointers, &mut boundaries,0, arr.len());
+    //debug!("Array after permutation: {:?}", arr);
+    //info!("Pointers: {:?}", pointers);
+    //info!("Boundaries: {:?}", boundaries);
+    //
+    //cleanup(&mut arr, &boundaries, &element_count, &pointers, &mut blocks);
+    //debug!("Output: {:?}", arr);
 
     // create vector with i32 ints from 0 to 9 in a random order
     //let mut vec: Vec<u32> = (0..128).collect();

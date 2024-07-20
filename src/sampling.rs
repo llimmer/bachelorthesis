@@ -4,28 +4,29 @@ use rand::{Rng, thread_rng};
 use crate::config::{ALPHA, K};
 use crate::base_case::*;
 
-pub fn sample(input: &mut [u32], decision_tree: &mut Vec<u32>) {
-    let n = input.len();
+pub fn sample(input: &mut [u32], decision_tree: &mut Vec<u32>, from: usize, to: usize) {
+    let n = to;
     let num_samples = (K as f64 * ALPHA).ceil() as usize;
     //debug!("Number of samples: {}", num_samples);
     // Step 1: Sample k*alpha elements in place
     let mut rng = thread_rng();
 
     for i in 0..num_samples {
-        let j = rng.gen_range(i..n);
-        input.swap(i, j);
+        let j = rng.gen_range(i+from..n);
+        input.swap(i+from, j as usize);
     }
 
-    insertion_sort_bound(input, 0, num_samples);
-    input[..num_samples].sort_unstable();
+    insertion_sort_bound(input, from, num_samples+from);
     //debug!("Sorted Sample: {:?}", &input[..num_samples]);
 
     let mut splitters = vec![0; K - 1];
     for i in 1..K {
-        let idx = i * num_samples / K;
+        let idx = from + (i * num_samples / K);
         splitters[i - 1] = input[idx];
     }
 
+    //remove duplicates
+    // TODO: think of equality buckets
     splitters.dedup();
     let num_unique_splitters = splitters.len();
 

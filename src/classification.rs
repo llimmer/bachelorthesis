@@ -1,12 +1,12 @@
 use log::debug;
 use crate::config::{K, BLOCKSIZE};
 
-pub fn classify(input: &mut [u32], decision_tree: &[u32], blocks: &mut Vec<Vec<u32>>, element_count: &mut [u32;K]) -> usize {
+pub fn classify(input: &mut [u32], decision_tree: &[u32], blocks: &mut Vec<Vec<u32>>, element_count: &mut [u32;K], from: usize, to: usize) -> usize {
     let mut write_idx = 0;
 
     let arr: [[u32; BLOCKSIZE];K]= [[0; BLOCKSIZE]; K];
 
-    for i in 0..input.len() {
+    for i in from..to {
         let element = input[i];
         let block_idx = find_block(element, decision_tree);
         element_count[block_idx] += 1;
