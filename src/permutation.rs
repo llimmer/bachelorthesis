@@ -2,25 +2,25 @@ use log::debug;
 use crate::config::{BLOCKSIZE, K};
 use crate::classification::find_block;
 
-pub fn permutate_blocks(input: &mut [u32], decision_tree: &[u32], classified_elements: usize, element_count: &[u32], pointers: &mut [(i32, i32); K], boundaries: &mut [u32; K+1], overflow_buffer: &mut Vec<u32>, from: usize, to: usize) {
+pub fn permutate_blocks(input: &mut [u32], decision_tree: &[u32], classified_elements: usize, element_count: &[u32], pointers: &mut [(i32, i32); K], boundaries: &mut [u32; K + 1], overflow_buffer: &mut Vec<u32>, from: usize, to: usize) {
     calculate_pointers(classified_elements, &element_count, pointers, boundaries, from, to);
     _permutate_blocks(input, decision_tree, pointers, overflow_buffer, 0, from, to);
 }
 
-fn _permutate_blocks(input: &mut [u32], decision_tree: &[u32], pointer: &mut [(i32, i32); K], overflow_buffer: &mut Vec<u32>, primary_bucket: u32, from: usize, to: usize){
+fn _permutate_blocks(input: &mut [u32], decision_tree: &[u32], pointer: &mut [(i32, i32); K], overflow_buffer: &mut Vec<u32>, primary_bucket: u32, from: usize, to: usize) {
     let mut pb: u32 = primary_bucket;
     let mut swap_buffer = [[0; BLOCKSIZE]; 2];
     let mut swap_buffer_idx: usize = 0;
 
     // TODO: check if already in correct bucket, think of logic
 
-    'outer: loop{
+    'outer: loop {
 
         // check if block is processed
-        if pointer[pb as usize].1 < pointer[pb as usize].0{
-            pb = (pb+1) % K as u32;
+        if pointer[pb as usize].1 < pointer[pb as usize].0 {
+            pb = (pb + 1) % K as u32;
             // check if cycle is finished
-            if pb == primary_bucket{
+            if pb == primary_bucket {
                 break 'outer;
             }
             continue 'outer;
@@ -33,7 +33,7 @@ fn _permutate_blocks(input: &mut [u32], decision_tree: &[u32], pointer: &mut [(i
         // TODO: check if already in right bucket and read < write, skip in this case
 
         // read block into swap buffer
-        for i in 0..BLOCKSIZE{
+        for i in 0..BLOCKSIZE {
             swap_buffer[swap_buffer_idx][i] = input[(pointer[pb as usize].1 + BLOCKSIZE as i32 + i as i32) as usize];
         }
 
@@ -48,7 +48,7 @@ fn _permutate_blocks(input: &mut [u32], decision_tree: &[u32], pointer: &mut [(i
 
                 // read block into second swap buffer and write first swap buffer
                 let next_swap_buffer_idx = (swap_buffer_idx + 1) % 2;
-                for i in 0..BLOCKSIZE{
+                for i in 0..BLOCKSIZE {
                     swap_buffer[next_swap_buffer_idx][i] = input[*wdest as usize - BLOCKSIZE + i];
                     input[*wdest as usize - BLOCKSIZE + i] = swap_buffer[swap_buffer_idx][i];
                 }
@@ -58,27 +58,27 @@ fn _permutate_blocks(input: &mut [u32], decision_tree: &[u32], pointer: &mut [(i
                 if *wdest > to as i32 {
                     // write to overflow buffer
                     debug!("Write to overflow buffer");
-                    for i in 0..BLOCKSIZE{
+                    for i in 0..BLOCKSIZE {
                         overflow_buffer.push(swap_buffer[swap_buffer_idx][i]);
                     }
                     break 'inner;
                 }
                 // write swap buffer
-                for i in 0..BLOCKSIZE{
+                for i in 0..BLOCKSIZE {
                     input[*wdest as usize - BLOCKSIZE + i] = swap_buffer[swap_buffer_idx][i];
                 }
                 break 'inner;
             }
         }
-
     }
 }
 
-fn calculate_pointers(classified_elements: usize, element_count: &[u32], pointers: &mut [(i32, i32); K], boundaries: &mut [u32; K+1], from: usize, to: usize) {
+fn calculate_pointers(classified_elements: usize, element_count: &[u32], pointers: &mut [(i32, i32); K], boundaries: &mut [u32; K + 1], from: usize, to: usize) {
     boundaries[0] = from as u32;
+    pointers[0].0 = from as i32;
     let mut sum = 0;
 
-    for i in 0..K-1 {
+    for i in 0..K - 1 {
         // round up to next block
         // TODO: think about type of K and BLOCKSIZE
         sum += element_count[i];
@@ -87,37 +87,44 @@ fn calculate_pointers(classified_elements: usize, element_count: &[u32], pointer
         if tmp % BLOCKSIZE as u32 != 0 {
             tmp += BLOCKSIZE as u32 - (sum % BLOCKSIZE as u32);
         }
-        boundaries[i+1] = from as u32 + tmp;
-        pointers[i+1].0 = from as i32 + tmp as i32;
+        boundaries[i + 1] = {
+            if from as u32 + tmp <= to as u32 {
+                from as u32 + tmp
+            } else {
+                to as u32
+            }
+        };
+        pointers[i + 1].0 = from as i32 + tmp as i32;
 
         if sum <= classified_elements as u32 {
-            pointers[i].1 = from as i32 + (tmp-BLOCKSIZE as u32) as i32;
+            pointers[i].1 = from as i32 + (tmp - BLOCKSIZE as u32) as i32;
+            //pointers[i].1 = from as i32 + (tmp-BLOCKSIZE as u32) as i32;
         } else {
-            pointers[i].1 = from as i32 + (classified_elements - BLOCKSIZE - classified_elements%BLOCKSIZE) as i32;
+            pointers[i].1 = from as i32 + (classified_elements as i32 - BLOCKSIZE as i32 - (classified_elements % BLOCKSIZE) as i32);
+            //pointers[i].1 = from as i32 + (classified_elements - BLOCKSIZE - classified_elements%BLOCKSIZE) as i32;
         }
     }
-    boundaries[K] = from as u32 + sum+element_count[K-1];
-    pointers[K-1].1 = from as i32 + (classified_elements - BLOCKSIZE - classified_elements%BLOCKSIZE) as i32;
+    boundaries[K] = from as u32 + sum + element_count[K - 1];
+    pointers[K - 1].1 = {
+        let index = from as i32 + (classified_elements as i32 - BLOCKSIZE as i32 - (classified_elements % BLOCKSIZE) as i32);
+        if index < from as i32 {
+            from as i32
+        } else {
+            index
+        }
+    };
+    println!("Pointers before permutation: {:?}", pointers);
 }
 
-fn compute_overfow_bucket(classified_elements: u32, element_count: &[u32]) -> Option<u32>{
-    let mut sum = classified_elements;
+pub fn compute_overflow_bucket(element_count: &[u32]) -> u32 {
     for i in 1..=K {
-        if element_count[K-i] > BLOCKSIZE as u32{
-            return Some(K as u32-i as u32);
+        // TODO: check for > or >=
+        if element_count[K - i] > BLOCKSIZE as u32 {
+            return K as u32 - i as u32;
         }
     }
-    return None;
+    return 0;
 }
-
-
-
-
-
-
-
-
-
 
 
 #[cfg(test)]
@@ -134,7 +141,7 @@ mod tests {
         let classified_elements = 52;
         let element_count = [9, 4, 5, 11, 2, 23, 8, 2];
         let mut pointers = [(0, 0); K];
-        let mut boundaries = [0; K+1];
+        let mut boundaries = [0; K + 1];
         let mut overflow_buffer = vec![];
 
         let length = input.len();
@@ -145,6 +152,5 @@ mod tests {
         for i in 0..K {
             assert_eq!(pointers[i], expected_pointers[i]);
         }
-
     }
 }

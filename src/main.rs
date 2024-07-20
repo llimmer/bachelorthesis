@@ -1,13 +1,14 @@
 use log::LevelFilter;
 use log::{debug, info, warn, error};
 use rand::prelude::SliceRandom;
-use rand::thread_rng;
+use rand::rngs::StdRng;
+use rand::{SeedableRng, thread_rng};
 use crate::classification::classify;
 use crate::cleanup::cleanup;
 use crate::config::{BLOCKSIZE, K};
 use crate::permutation::permutate_blocks;
 use crate::sampling::sample;
-use crate::sort::sort;
+use crate::sort::{_sort, sort};
 
 mod sampling;
 mod base_case;
@@ -22,21 +23,109 @@ fn main() {
         .filter_level(LevelFilter::Debug)
         .init();
 
-    //for j in 0..100000 {
-    loop{
-        let mut arr: Vec<u32> = (1..65).collect();
-        // shuffle array each iteration to get different results
-        let mut trng = thread_rng();
-        arr.shuffle(&mut trng);
-        sort::sort(&mut arr);
+    //let mut arr = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48];
+    //_sort(&mut arr, 16, 64);
 
-        for i in 0..arr.len() {
-            if arr[i] != (i + 1) as u32 {
-                println!("Error at index {}: Expected {}, got {}", i, i + 1, arr[i]);
-            }
+    let mut arr: Vec<u32> = (1..128).collect();
+    // shuffle array each iteration to get different results
+    let seed: u64 = 34123;
+    let mut rng = StdRng::seed_from_u64(seed);
+    arr.shuffle(&mut rng);
+    sort::sort(&mut arr);
+    println!("Output: {:?}", arr);
+
+    for i in 0..arr.len() {
+        if arr[i] != (i + 1) as u32 {
+            println!("Error at index {}: Expected {}, got {}", i, i + 1, arr[i]);
         }
-        break;
     }
+    println!("Success");
+
+    //let mut arr = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48];
+    //let mut decision_tree = [24, 12, 36, 6, 18, 30, 42];
+    //let mut blocks = vec![vec![]; K];
+    //let mut element_count = [0; K];
+    //let mut pointers = [(0, 0); K];
+    //let mut boundaries = [0; K+1];
+    //let mut overflow_buffer = vec![];
+    //overflow_buffer.reserve(BLOCKSIZE);
+//
+    //let length = arr.len();
+    //let count = classify(&mut arr, &decision_tree, &mut blocks, &mut element_count, 16, length);
+    //permutate_blocks(&mut arr, &decision_tree, count, &element_count, &mut pointers, &mut boundaries, &mut overflow_buffer, 16, length);
+//
+    //cleanup(&mut arr, &boundaries, &element_count, &pointers, &mut blocks, &mut overflow_buffer, 16, length);
+    //println!("{:?}", arr);
+//
+    //let mut arr = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48];
+    //_sort(&mut arr, 16, 64);
+    //println!("{:?}", arr);
+
+    //for j in 0..100000 {
+    //loop{
+    //    let mut arr: Vec<u32> = (1..65).collect();
+    //    // shuffle array each iteration to get different results
+    //    let mut trng = thread_rng();
+    //    arr.shuffle(&mut trng);
+    //    sort::sort(&mut arr);
+    //
+    //    for i in 0..arr.len() {
+    //        if arr[i] != (i + 1) as u32 {
+    //            println!("Error at index {}: Expected {}, got {}", i, i + 1, arr[i]);
+    //        }
+    //    }
+    //    break;
+    //}
+
+    //let mut arr: Vec<u32> = (1..=64).collect();
+    //// shuffle array each iteration to get different results
+    //let mut trng = thread_rng();
+    //arr.shuffle(&mut trng);
+    //sort::sort(&mut arr);
+    //println!("Output: {:?}", arr);
+
+    //for i in 0..arr.len() {
+    //    if arr[i] != (i + 1) as u32 {
+    //        println!("Error at index {}: Expected {}, got {}", i, i + 1, arr[i]);
+    //    }
+    //     break;
+    //}
+
+    //let mut arr = [9, 16, 37, 39, 42, 44, 52, 54, 62, 75, 92, 101, 112, 125, 128, 22, 122, 34, 23, 95, 127, 46, 113, 21, 81, 47, 116, 97, 83, 10, 110, 79, 78, 18, 56, 70, 1, 89, 29, 74, 91, 115, 15, 27, 14, 49, 59, 53, 13, 5, 87, 38, 20, 108, 32, 103, 55, 73, 61, 102, 17, 12, 86, 117, 58, 69, 90, 65, 36, 66, 7, 24, 11, 51, 121, 123, 60, 120, 96, 67, 85, 43, 124, 100, 50, 99, 109, 30, 80, 118, 6, 28, 31, 88, 33, 63, 26, 57, 114, 4, 35, 76, 2, 48, 105, 64, 8, 98, 119, 68, 3, 40, 25, 41, 72, 93, 84, 107, 77, 111, 106, 71, 82, 45, 94, 19, 126, 104];
+    //// shuffle array
+    //let mut trng = thread_rng();
+    //arr.shuffle(&mut trng);
+    //let mut decision_tree = [54, 39, 101, 16, 44, 75, 125];
+    //let mut blocks = vec![vec![]; K];
+    //let mut element_count = [0; K];
+    //let mut pointers = [(0, 0); K];
+    //let mut boundaries = [0; K+1];
+    //let mut overflow_buffer = vec![];
+    //overflow_buffer.reserve(BLOCKSIZE);
+    //
+    //let length = arr.len();
+    //let count = classify(&mut arr, &decision_tree, &mut blocks, &mut element_count, 0, length);
+    //permutate_blocks(&mut arr, &decision_tree, count, &element_count, &mut pointers, &mut boundaries, &mut overflow_buffer, 0, length);
+    //cleanup(&mut arr, &boundaries, &element_count, &pointers, &mut blocks, &mut overflow_buffer);
+    //
+    //let mut sum = 0;
+    //for i in 0..K {
+    //    let start = sum;
+    //    sum += element_count[i];
+    //    let end = sum;
+    //    //debug!("Recursion sort from index {} (inclusive) to {} (exclusive)", start, end);
+    //    sort::_sort(&mut arr, start as usize, end as usize);
+    //}
+    //println!("Output: {:?}", arr);
+    //
+    //for i in 0..arr.len() {
+    //    if arr[i] != (i + 1) as u32 {
+    //        println!("Error at index {}: Expected {}, got {}", i, i + 1, arr[i]);
+    //    }
+    //}
+    //println!("Success");
+    //
+
 
     //let mut arr = [1, 2, 3, 4, 5, 6, 7, 8, 9, 24, 36, 34, 11, 42, 33, 10, 17, 20, 12, 23, 39, 29, 28, 27, 25, 37, 32, 16, 19, 31, 41, 21, 40, 30, 13, 38, 14, 35, 15, 22, 26, 18, 44, 43, 45, 52, 50, 49, 48, 51, 46, 47, 54, 59, 56, 57, 53, 58, 55, 60, 61, 63, 62, 64];
     //sort::sort(&mut arr);

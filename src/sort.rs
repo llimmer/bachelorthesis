@@ -10,16 +10,17 @@ pub fn sort(arr: &mut [u32]) {
     _sort(arr, 0, arr.len());
 }
 
-fn _sort(arr: &mut [u32], from: usize, to: usize) {
+// TODO: pub only for debugging, remove later
+pub fn _sort(arr: &mut [u32], from: usize, to: usize) {
 
     // TODO: check and handle overflow case
     if to as i32 - from as i32 <= THRESHOLD as i32 {
-        //debug!("Base case: {:?}", &arr[from..to]);
+        debug!("Base case: {:?}", &arr[from..to]);
         insertion_sort_bound(arr, from, to);
         return;
     }
 
-    debug!("Input: {:?}", arr);
+    debug!("Input: {:?}", &arr[from..to]);
 
     // buffer for decision tree/pointer/boundaries
     let mut decision_tree: Vec<u32> = vec![];
@@ -60,12 +61,13 @@ fn _sort(arr: &mut [u32], from: usize, to: usize) {
     debug!("Array after permutation: {:?}", arr);
     info!("Pointers: {:?}", pointers);
     info!("Boundaries: {:?}", boundaries);
+    info!("Overflow Buffer: {:?}", overflow_buffer);
 
-    cleanup(arr, &boundaries, &element_count, &pointers, &mut blocks, &mut overflow_buffer);
+    cleanup(arr, &boundaries, &element_count, &pointers, &mut blocks, &mut overflow_buffer, from, to);
     debug!("Output: {:?}", arr);
 
     // RECURSION:
-    let mut sum = 0;
+    let mut sum = from as u32;
     for i in 0..K {
         let start = sum;
         sum += element_count[i];
@@ -122,7 +124,6 @@ mod tests {
 
         let length = sampled_input.len();
         permutate_blocks(&mut sampled_input, &decision_tree, classified_elements, &element_count, &mut pointers, &mut boundaries, &mut overflow_buffer, 0, length);
-
     }
 
     fn is_equal(input: &[u32], compare: &[u32]) {

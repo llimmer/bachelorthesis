@@ -2,7 +2,7 @@ use log::debug;
 use crate::config::{K, BLOCKSIZE};
 
 pub fn classify(input: &mut [u32], decision_tree: &[u32], blocks: &mut Vec<Vec<u32>>, element_count: &mut [u32;K], from: usize, to: usize) -> usize {
-    let mut write_idx = 0;
+    let mut write_idx = from;
 
     let arr: [[u32; BLOCKSIZE];K]= [[0; BLOCKSIZE]; K];
 
@@ -30,7 +30,7 @@ pub fn classify(input: &mut [u32], decision_tree: &[u32], blocks: &mut Vec<Vec<u
             tmp += 1;
         }
     }
-    return write_idx;
+    return write_idx-from;
 }
 
 pub fn find_block(input: u32, decision_tree: &[u32]) -> usize {

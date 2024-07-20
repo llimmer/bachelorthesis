@@ -1,15 +1,18 @@
 use crate::config::{BLOCKSIZE, K};
 use crate::classification::find_block;
+use crate::permutation::compute_overflow_bucket;
 
-pub fn cleanup(input: &mut [u32], boundaries: &[u32; K + 1], element_count: &[u32; K], pointers: &[(i32, i32); K], blocks: &mut Vec<Vec<u32>>, overflow_buffer: &mut Vec<u32>) {
-    let mut sum = 0;
+pub fn cleanup(input: &mut [u32], boundaries: &[u32; K + 1], element_count: &[u32; K], pointers: &[(i32, i32); K], blocks: &mut Vec<Vec<u32>>, overflow_buffer: &mut Vec<u32>, from: usize, to: usize) {
+    let mut sum = from as u32;
+
+    let overflow_bucket = compute_overflow_bucket(element_count);
 
     for i in 0..K - 1 {
         let write_ptr = pointers[i].0;
         sum += element_count[i];
 
 
-        if write_ptr < sum as i32 || write_ptr <= boundaries[i] as i32 || write_ptr > input.len() as i32 {
+        if write_ptr < sum as i32 || write_ptr <= boundaries[i] as i32 || write_ptr > to as i32 {
             continue;
         }
 
@@ -24,10 +27,43 @@ pub fn cleanup(input: &mut [u32], boundaries: &[u32; K + 1], element_count: &[u3
         }
     }
 
-
     // write block elements back to input
-    sum = 0;
+    sum = from as u32;
     for i in 0..K - 1 {
+
+        // Overflow case:
+        if i == overflow_bucket as usize {
+            // write overflow block:
+            // fill back:
+            let mut len_back = to as i32 - pointers[overflow_bucket as usize].0;
+            if len_back > 0 {
+                for i in 0..len_back as usize {
+                    if !blocks[overflow_bucket as usize].is_empty() {
+                        input[to - i - 1] = blocks[overflow_bucket as usize].pop().unwrap();
+                    }
+                }
+            } else {
+                len_back = to as i32 - (pointers[overflow_bucket as usize].0 - BLOCKSIZE as i32);
+                assert!(len_back > 0, "len_back is negative");
+                for i in 0..len_back as usize {
+                    if !overflow_buffer.is_empty() {
+                        input[to - i - 1] = overflow_buffer.pop().unwrap();
+                    }
+                }
+            }
+
+            // fill front
+            while !blocks[overflow_bucket as usize].is_empty() {
+                input[sum as usize] = blocks[overflow_bucket as usize].pop().unwrap();
+                sum += 1;
+            }
+            while !overflow_buffer.is_empty() {
+                input[sum as usize] = overflow_buffer.pop().unwrap();
+                sum += 1;
+            }
+            continue;
+        }
+
         let mut start = sum;
         sum += element_count[i];
 
@@ -44,20 +80,12 @@ pub fn cleanup(input: &mut [u32], boundaries: &[u32; K + 1], element_count: &[u3
             start += 1;
         }
     }
-
-    // write last block:
-    while !blocks[K - 1].is_empty() {
-        input[sum as usize] = blocks[K - 1].pop().unwrap();
-        sum += 1;
-    }
-    while !overflow_buffer.is_empty() {
-        input[sum as usize] = overflow_buffer.pop().unwrap();
-        sum += 1;
-    }
 }
+
 
 #[cfg(test)]
 mod tests {
+    use log::debug;
     use super::*;
 
     fn check_range(input: &[u32], from: u32, to: u32) {
@@ -112,6 +140,7 @@ mod tests {
         let pointer = [(24, 0), (48, 32), (48, 40), (80, 72), (88, 80), (96, 88), (112, 96), (128, 96)];
         let mut overflow_buffer = vec![];
         cleanup(&mut input, &boundaries, &element_count, &pointer, &mut blocks, &mut overflow_buffer);
+        println!("{:?}", input);
 
         check_blockidx(&input, &element_count, &decision_tree);
 

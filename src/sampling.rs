@@ -1,6 +1,6 @@
 use log::debug;
-use rand::{Rng, thread_rng};
-
+use rand::{Rng, SeedableRng};
+use rand::rngs::StdRng;
 use crate::config::{ALPHA, K};
 use crate::base_case::*;
 
@@ -9,7 +9,8 @@ pub fn sample(input: &mut [u32], decision_tree: &mut Vec<u32>, from: usize, to: 
     let num_samples = (K as f64 * ALPHA).ceil() as usize;
     //debug!("Number of samples: {}", num_samples);
     // Step 1: Sample k*alpha elements in place
-    let mut rng = thread_rng();
+    let mut rng = StdRng::seed_from_u64(12345);
+
 
     for i in 0..num_samples {
         let j = rng.gen_range(i+from..n);
