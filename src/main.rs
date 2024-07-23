@@ -17,6 +17,7 @@ mod config;
 mod permutation;
 mod cleanup;
 mod sort;
+mod tmp;
 
 fn main() {
     env_logger::builder()

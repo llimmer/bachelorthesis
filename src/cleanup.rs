@@ -1,6 +1,11 @@
 use crate::config::{BLOCKSIZE, K};
 use crate::classification::find_block;
 use crate::permutation::compute_overflow_bucket;
+use crate::tmp::Sorter;
+
+pub fn sorter_cleanup(sorter: &mut Sorter){
+    cleanup(sorter.arr, sorter.boundaries, sorter.element_count, sorter.pointers, sorter.blocks, sorter.overflow_buffer, sorter.from, sorter.to);
+}
 
 pub fn cleanup(input: &mut [u32], boundaries: &[u32; K + 1], element_count: &[u32; K], pointers: &[(i32, i32); K], blocks: &mut Vec<Vec<u32>>, overflow_buffer: &mut Vec<u32>, from: usize, to: usize) {
     let mut sum = from as u32;

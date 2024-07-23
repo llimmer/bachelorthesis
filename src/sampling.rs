@@ -3,6 +3,11 @@ use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 use crate::config::{ALPHA, K};
 use crate::base_case::*;
+use crate::tmp::{Sorter};
+
+pub fn sorter_sample(sorter: &mut Sorter){
+    sample(sorter.arr, sorter.decision_tree, sorter.from, sorter.to);
+}
 
 pub fn sample(input: &mut [u32], decision_tree: &mut Vec<u32>, from: usize, to: usize) {
     let n = to;

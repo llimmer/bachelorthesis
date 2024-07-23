@@ -1,6 +1,10 @@
 use log::debug;
 use crate::config::{K, BLOCKSIZE};
+use crate::tmp::Sorter;
 
+pub fn sorter_classify(sorter: &mut Sorter) -> u32 {
+    classify(sorter.arr, sorter.decision_tree, sorter.blocks, sorter.element_count, sorter.from, sorter.to) as u32
+}
 pub fn classify(input: &mut [u32], decision_tree: &[u32], blocks: &mut Vec<Vec<u32>>, element_count: &mut [u32;K], from: usize, to: usize) -> usize {
     let mut write_idx = from;
 

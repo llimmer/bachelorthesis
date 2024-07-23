@@ -1,6 +1,11 @@
 use log::debug;
 use crate::config::{BLOCKSIZE, K};
 use crate::classification::find_block;
+use crate::tmp::Sorter;
+
+pub fn sorter_permutate(sorter: &mut Sorter){
+    permutate_blocks(sorter.arr, sorter.decision_tree, sorter.classified_elements as usize, sorter.element_count, sorter.pointers, sorter.boundaries, sorter.overflow_buffer, sorter.from, sorter.to);
+}
 
 pub fn permutate_blocks(input: &mut [u32], decision_tree: &[u32], classified_elements: usize, element_count: &[u32], pointers: &mut [(i32, i32); K], boundaries: &mut [u32; K + 1], overflow_buffer: &mut Vec<u32>, from: usize, to: usize) {
     calculate_pointers(classified_elements, &element_count, pointers, boundaries, from, to);
