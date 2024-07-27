@@ -1,99 +1,104 @@
 use crate::config::{BLOCKSIZE, K};
 use crate::classification::find_block;
 use crate::permutation::compute_overflow_bucket;
-use crate::tmp::Sorter;
+use crate::sorter::Sorter;
 
-pub fn sorter_cleanup(sorter: &mut Sorter){
-    cleanup(sorter.arr, sorter.boundaries, sorter.element_count, sorter.pointers, sorter.blocks, sorter.overflow_buffer, sorter.from, sorter.to);
-}
+impl<'a> Sorter<'a> {
+    pub fn cleanup(&mut self) {
+        let mut sum = 0;
+        let overflow_bucket = compute_overflow_bucket(&self.element_counts) as usize;
 
-pub fn cleanup(input: &mut [u32], boundaries: &[u32; K + 1], element_count: &[u32; K], pointers: &[(i32, i32); K], blocks: &mut Vec<Vec<u32>>, overflow_buffer: &mut Vec<u32>, from: usize, to: usize) {
-    let mut sum = from as u32;
+        for i in 0..K {
+            // dst = start of bucket
+            let mut dst = sum as usize;
 
-    let overflow_bucket = compute_overflow_bucket(element_count);
+            let write_ptr = self.pointers[i].0;
+            sum += self.element_counts[i];
 
-    for i in 0..K - 1 {
-        let write_ptr = pointers[i].0;
-        sum += element_count[i];
+            if (self.overflow && i == overflow_bucket) {
+                let mut tailsize = sum as usize + BLOCKSIZE - write_ptr as usize;
+                assert!(tailsize >= 0);
+                assert_eq!(self.overflow_buffer.len(), BLOCKSIZE);
+                let to_write: usize = BLOCKSIZE + self.blocks[i].len();
 
+                // case overflowbuffer > frontspace
+                let mut to_write_front = to_write - tailsize as usize;
+                if to_write_front < BLOCKSIZE {
+                    // fill front
+                    let target_slice = &mut self.arr[dst..dst + to_write_front];
+                    target_slice.copy_from_slice(&self.overflow_buffer[..to_write_front]);
+                    dst = sum as usize - tailsize;
 
-        if write_ptr < sum as i32 || write_ptr <= boundaries[i] as i32 || write_ptr > to as i32 {
-            continue;
-        }
+                    // fill back
+                    let overflow_back = BLOCKSIZE - to_write_front;
+                    let target_slice = &mut self.arr[dst..dst + overflow_back];
+                    target_slice.copy_from_slice(&self.overflow_buffer[to_write_front..]);
+                    dst += overflow_back;
+                    tailsize -= overflow_back;
 
+                    // fill back with blocks
+                    let target_slice = &mut self.arr[dst..dst + tailsize];
+                    target_slice.copy_from_slice(&self.blocks[i]);
+                } else { // case overflowbuffer <= frontspace
+                    // fill front
+                    let target_slice = &mut self.arr[dst..dst + BLOCKSIZE];
+                    target_slice.copy_from_slice(&self.overflow_buffer[..]);
+                    dst += BLOCKSIZE;
+                    to_write_front -= BLOCKSIZE;
 
-        for j in 1..=(write_ptr - sum as i32) {
-            // TODO: blocks can be full (>BLOCKSIZE), paper suggests using swap buffer
-            let element = input[(write_ptr - j) as usize];
-            blocks[i].push(element);
+                    // fill front with blocks
+                    let target_slice = &mut self.arr[dst..dst + to_write_front];
+                    target_slice.copy_from_slice(&self.blocks[i][..to_write_front]);
+                    dst = sum as usize - tailsize;
 
-            // TODO: debug, remove later
-            //assert!(blocks[i].len() <= BLOCKSIZE as usize, "Block size exceeded");
-        }
-    }
+                    // fill back with blocks
+                    let target_slice = &mut self.arr[dst..dst + tailsize];
+                    target_slice.copy_from_slice(&self.blocks[i][to_write_front..]);
+                }
+                continue;
+            }
 
-    // write block elements back to input
-    sum = from as u32;
-    for i in 0..K - 1 {
+            let mut to_write: usize = 0;
 
-        // Overflow case:
-        if i == overflow_bucket as usize {
-            // write overflow block:
-            // fill back:
-            let mut len_back = to as i32 - pointers[overflow_bucket as usize].0;
-            if len_back > 0 {
-                for i in 0..len_back as usize {
-                    if !blocks[overflow_bucket as usize].is_empty() {
-                        input[to - i - 1] = blocks[overflow_bucket as usize].pop().unwrap();
-                    }
+            // todo: as i64
+            if (write_ptr <= self.boundaries[i] as i64 || write_ptr as usize > self.arr.len()) {
+                // do nothing
+            }
+            // write ptr > sum => (write ptr-sum) elements overwrite to right
+            // TODO: check if i!=K-1 is necessary
+            else if write_ptr > sum as i64 && i != K - 1 {
+                // read elements and write to correct position
+                // TODO: check if possible with slice copy
+                for j in 0..((write_ptr as u64 - sum) as usize) {
+                    let element = self.arr[(sum as usize + j) as usize];
+                    self.arr[dst] = element;
+                    dst += 1;
                 }
             } else {
-                len_back = to as i32 - (pointers[overflow_bucket as usize].0 - BLOCKSIZE as i32);
-                assert!(len_back > 0, "len_back is negative");
-                for i in 0..len_back as usize {
-                    if !overflow_buffer.is_empty() {
-                        input[to - i - 1] = overflow_buffer.pop().unwrap();
-                    }
+                // fill the back
+                to_write = sum as usize - write_ptr as usize;
+                if to_write > 0 {
+                    let target_slice = &mut self.arr[write_ptr as usize..sum as usize];
+                    target_slice.copy_from_slice(&self.blocks[i][..to_write]);
                 }
             }
 
-            // fill front
-            while !blocks[overflow_bucket as usize].is_empty() {
-                input[sum as usize] = blocks[overflow_bucket as usize].pop().unwrap();
-                sum += 1;
+            // fill the front with remaining elements from blocks buffer
+            let remaining = self.blocks[i].len() - to_write;
+            if remaining > 0 {
+                let target_slice = &mut self.arr[dst..dst + remaining];
+                target_slice.copy_from_slice(&self.blocks[i][to_write..]);
             }
-            while !overflow_buffer.is_empty() {
-                input[sum as usize] = overflow_buffer.pop().unwrap();
-                sum += 1;
-            }
-            continue;
-        }
-
-        let mut start = sum;
-        sum += element_count[i];
-
-        // fill the back
-        let mut write_idx = pointers[i].0 as usize;
-        while write_idx < sum as usize {
-            input[write_idx] = blocks[i].pop().unwrap();
-            write_idx += 1;
-        }
-
-        // fill the front
-        while !blocks[i].is_empty() {
-            input[start as usize] = blocks[i].pop().unwrap();
-            start += 1;
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
     use log::debug;
     use super::*;
 
-    fn check_range(input: &[u32], from: u32, to: u32) {
+    fn check_range(input: &[u64], from: u64, to: u64) {
         'outer: for i in from..=to {
             for j in input.iter() {
                 if i == *j {
@@ -104,30 +109,19 @@ mod tests {
         }
     }
 
-    fn check_blockidx(input: &[u32], element_count: &[u32], decision_tree: &[u32]) {
-        let mut sum: u32 = 0;
-        for i in 0..K {
-            let mut start = sum;
-            sum += element_count[i];
-            for j in start..sum {
-                let block_idx = find_block(input[j as usize], &decision_tree);
-                assert_eq!(block_idx, i);
-            }
-        }
-    }
-
     #[test]
     fn test_small() {
         let mut input = [5, 9, 8, 7, 6, 4, 3, 2, 43, 42, 41, 40, 10, 13, 12, 11, 15, 18, 17, 16, 26, 25, 24, 23, 20, 29, 28, 27, 26, 25, 24, 23, 43, 42, 41, 40, 47, 46, 45, 44, 39, 38, 36, 35, 37, 54, 49, 48, 34, 33, 32, 50, 1, 14, 22, 21, 56, 62, 58, 60, 57, 59, 61, 55];
-        let mut blocks: Vec<Vec<u32>> = vec![vec![1], vec![], vec![14], vec![22, 21, 19], vec![30, 31], vec![51, 52, 53], vec![], vec![63, 64]];
-        let decision_tree = vec![29, 13, 54, 9, 18, 31, 62];
-        let element_count = [9, 4, 5, 11, 2, 23, 8, 2];
+        let mut blocks: Vec<Vec<u64>> = vec![vec![1], vec![], vec![14], vec![22, 21, 19], vec![30, 31], vec![51, 52, 53], vec![], vec![63, 64]];
+        let decision_tree = [29, 13, 54, 9, 18, 31, 62];
+        let element_counts = [9, 4, 5, 11, 2, 23, 8, 2];
         let boundaries = [0, 12, 16, 20, 32, 32, 56, 64, 64];
         let pointers = [(8, 0), (16, 12), (20, 16), (28, 24), (32, 28), (52, 48), (64, 48), (64, 48)];
         let mut overflow_buffer = vec![];
-        cleanup(&mut input, &boundaries, &element_count, &pointers, &mut blocks, &mut overflow_buffer);
+        let mut s = Sorter::new_(&mut input, decision_tree, 0, pointers, boundaries, 0, blocks, element_counts, false, overflow_buffer);
+        s.cleanup();
 
-        check_blockidx(&input, &element_count, &decision_tree);
+        println!("{}", s);
 
         check_range(&input, 1, 64);
 
@@ -135,51 +129,21 @@ mod tests {
     }
 
     #[test]
-    fn test_big() {
-        let mut input = [18, 27, 17, 12, 23, 24, 15, 25, 13, 19, 10, 1, 8, 20, 2, 26, 21, 16, 3, 9, 14, 4, 7, 0, 127, 117, 124, 116, 119, 114, 113, 111, 37, 45, 31, 40, 44, 34, 30, 32, 43, 36, 38, 41, 42, 29, 35, 33, 64, 71, 70, 73, 69, 55, 60, 68, 58, 75, 61, 74, 67, 51, 52, 56, 62, 63, 57, 59, 72, 66, 54, 53, 64, 71, 70, 73, 69, 55, 60, 68, 80, 86, 84, 81, 82, 76, 77, 78, 88, 97, 87, 90, 89, 93, 92, 95, 118, 112, 115, 125, 120, 123, 126, 121, 102, 110, 98, 109, 107, 99, 105, 104, 127, 117, 124, 116, 119, 114, 113, 111, 118, 112, 115, 125, 120, 123, 126, 121];
+    fn test_overflow_small() {
+        let mut input = [5, 9, 8, 7, 6, 4, 3, 2, 43, 42, 41, 40, 10, 13, 12, 11, 15, 18, 17, 16, 26, 25, 24, 23, 20, 29, 28, 27, 26, 25, 24, 23, 43, 42, 41, 40, 47, 46, 45, 44, 39, 38, 36, 35, 37, 54, 49, 48, 34, 33, 32, 50, 63, 64, 65, 66, 56, 62, 58, 60, 57, 59, 61, 55, 52, 53, 67];
+        let mut blocks: Vec<Vec<u64>> = vec![vec![1], vec![], vec![14], vec![22, 21, 19], vec![30, 31], vec![51, 52, 53], vec![], vec![67]];
+        let decision_tree = [29, 13, 54, 9, 18, 31, 62];
+        let element_counts = [9, 4, 5, 11, 2, 23, 8, 5];
+        let boundaries = [0, 12, 16, 20, 32, 32, 56, 67, 67];
+        let pointers = [(8, 0), (16, 12), (20, 16), (28, 20), (32, 28), (52, 48), (64, 48), (68, 48)];
+        let mut overflow_buffer = vec![63, 64, 65, 66];
+        let mut s = Sorter::new_(&mut input, decision_tree, 0, pointers, boundaries, 0, blocks, element_counts, true, overflow_buffer);
+        s.cleanup();
 
-        let mut blocks: Vec<Vec<u32>> = vec![vec![22, 6, 5, 11], vec![39, 28], vec![48, 50, 49, 46, 47], vec![65], vec![79, 85, 83], vec![94, 91, 96], vec![108, 106, 103, 100, 101], vec![122]];
-        let decision_tree = [75, 45, 97, 27, 50, 86, 110];
-        let element_count = [28, 18, 5, 25, 11, 11, 13, 17];
-        let boundaries = [0, 32, 48, 56, 80, 88, 104, 112, 128];
-        let pointer = [(24, 0), (48, 32), (48, 40), (80, 72), (88, 80), (96, 88), (112, 96), (128, 96)];
-        let mut overflow_buffer = vec![];
-        cleanup(&mut input, &boundaries, &element_count, &pointer, &mut blocks, &mut overflow_buffer);
-        println!("{:?}", input);
+        println!("{}", s);
 
-        check_blockidx(&input, &element_count, &decision_tree);
+        check_range(&input, 1, 64);
 
-        check_range(&input, 0, 127);
+        println!("{:?}", input)
     }
 }
-
-
-// 'outer: for i in 0..K {
-//         sum += element_count[i];
-//         let last_element = boundaries[i + 1] as usize;
-//         let max = max(pointers[i].0, pointers[i].1 + BLOCKSIZE as i32);
-//
-//         // TODO: only for debug, remove later
-//         if max < 0 {
-//             panic!("Max is negative")
-//         }
-//         let mut umax = max as u32;
-//
-//         if umax <= last_element as u32 {
-//             continue;
-//         } else {
-//             let bucket = find_block(input[umax as usize - 1 as usize], decision_tree);
-//             if bucket != i {
-//                 continue 'outer;
-//             }
-//             for j in 1..=(umax - sum) {
-//                 let element = input[umax as usize - j as usize];
-//                 blocks[i].push(element);
-//
-//                 // TODO: debug, remove later
-//                 if blocks[i].len() > BLOCKSIZE as usize {
-//                     panic!("Block size exceeded")
-//                 }
-//             }
-//         }
-//     }

@@ -1,36 +1,83 @@
 use log::{debug, error, info};
-use crate::base_case::{insertion_sort, insertion_sort_bound};
+use crate::base_case::insertion_sort;
 use crate::config::{BLOCKSIZE, K, THRESHOLD};
-use crate::sampling::sample;
-use crate::classification::classify;
-use crate::permutation::permutate_blocks;
-use crate::cleanup::cleanup;
+use crate::sorter::Sorter;
 
-pub fn sort(arr: &mut [u32]) {
+pub fn sort(arr: &mut [u64]){
+    let mut s = Sorter::new(arr);
+    s.sort();
+}
+
+impl<'a> Sorter<'a> {
+    pub fn sort(&mut self) {
+        if self.arr.len() as i64 <= THRESHOLD as i64 {
+            debug!("Base case: {:?}", self.arr);
+            insertion_sort(self.arr);
+            return;
+        }
+        debug!("Input: {:?}", self.arr);
+
+        self.sample();
+        debug!("Array after sampling: {:?}", self.arr);
+        info!("Decision Tree: {:?}", self.decision_tree);
+
+
+        self.classified_elements = self.classify();
+        debug!("Array after classification: {}", self);
+        info!("Classified Elements: {}", self.classified_elements);
+        info!("Element Count: {:?}", self.element_counts);
+        info!("Blocks: {:?}", self.blocks);
+
+        self.permutate_blocks();
+        debug!("Array after permutation: {}", self);
+        info!("Pointers: {:?}", self.pointers);
+        info!("Boundaries: {:?}", self.boundaries);
+        info!("Overflow Buffer: {:?}", self.overflow_buffer);
+
+        self.cleanup();
+
+        debug!("{}", self);
+
+
+        // RECURSION:
+        let mut sum = 0;
+        for i in 0..K {
+
+            let start = sum;
+            sum += self.element_counts[i];
+            let mut new_struct = Sorter::new(&mut self.arr[start as usize..sum as usize]);
+            new_struct.sort();
+        }
+    }
+}
+
+/*
+pub fn sort(arr: &mut [u64]) {
     _sort(arr, 0, arr.len());
 }
 
 // TODO: pub only for debugging, remove later
-pub fn _sort(arr: &mut [u32], from: usize, to: usize) {
+pub fn _sort(arr: &mut [u64], from: usize, to: usize) {
 
     // TODO: check and handle overflow case
-    if to as i32 - from as i32 <= THRESHOLD as i32 {
+    if to as i64 - from as i64 <= THRESHOLD as i64 {
         debug!("Base case: {:?}", &arr[from..to]);
         insertion_sort_bound(arr, from, to);
         return;
     }
 
+
     debug!("Input: {:?}", &arr[from..to]);
 
     // buffer for decision tree/pointer/boundaries
-    let mut decision_tree: Vec<u32> = vec![];
+    let mut decision_tree: Vec<u64> = vec![];
     let mut pointers = [(0, 0); K];
     let mut boundaries = [0; K + 1];
 
     // local buffers
-    let mut blocks: Vec<Vec<u32>> = vec![vec![]; K];
-    let mut element_count: [u32; K] = [0; K];
-    let mut overflow_buffer: Vec<u32> = vec![];
+    let mut blocks: Vec<Vec<u64>> = vec![vec![]; K];
+    let mut element_count: [u64; K] = [0; K];
+    let mut overflow_buffer: Vec<u64> = vec![];
     overflow_buffer.reserve(BLOCKSIZE);
 
     sample(arr, &mut decision_tree, from, to);
@@ -64,10 +111,13 @@ pub fn _sort(arr: &mut [u32], from: usize, to: usize) {
     info!("Overflow Buffer: {:?}", overflow_buffer);
 
     cleanup(arr, &boundaries, &element_count, &pointers, &mut blocks, &mut overflow_buffer, from, to);
-    debug!("Output: {:?}", arr);
+
+    print_vec(arr, &element_count);
+
+
 
     // RECURSION:
-    let mut sum = from as u32;
+    let mut sum = from as u64;
     for i in 0..K {
         let start = sum;
         sum += element_count[i];
@@ -77,6 +127,28 @@ pub fn _sort(arr: &mut [u32], from: usize, to: usize) {
     }
 }
 
+fn print_vec(input: &[u64], element_count: &[u64]) {
+        let red = "\x1b[31m";
+        let white = "\x1b[37m";
+        let mut current: bool = true;
+        let mut sum = 0;
+        for i in 0..K {
+            let mut start = sum;
+            sum += element_count[i];
+            print!("{}[", {if current {red} else {white}});
+            while start < sum-1 {
+                print!("{} ", input[start as usize]);
+                start += 1;
+            }
+            if start != sum{
+                print!("{}]", input[start as usize]);
+            }
+            print!(" ");
+            current = !current;
+        }
+        println!("\x1b[0m");
+    }
+
 #[cfg(test)]
 mod tests {
     use rand::seq::SliceRandom;
@@ -85,14 +157,14 @@ mod tests {
 
     #[test]
     fn test_small() {
-        let mut vec: Vec<u32> = (1..=64).rev().collect();
+        let mut vec: Vec<u64> = (1..=64).rev().collect();
         //shuffle
         vec.shuffle(&mut thread_rng());
         sort(&mut vec);
         check_range(&vec, 1, 64);
     }
 
-    fn check_range(input: &[u32], from: u32, to: u32) {
+    fn check_range(input: &[u64], from: u64, to: u64) {
         'outer: for i in from..=to {
             for j in input.iter() {
                 if i == *j {
@@ -103,13 +175,15 @@ mod tests {
         }
     }
 
+
+
     #[test]
     fn test_all(){
         let mut sampled_input = [1, 2, 3, 4, 5, 8, 9, 13, 14, 16, 17, 19, 20, 22, 23, 24, 28, 31, 36, 38, 37, 30, 7, 25, 35, 32, 39, 34, 29, 40, 21, 27, 15, 10, 11, 12, 18, 26, 33, 6, 43, 44, 41, 42, 46, 49, 45, 48, 47, 53, 52, 51, 50, 57, 56, 54, 55, 58, 59, 62, 60, 63, 61, 64];
         let mut decision_tree = [20, 14, 28, 9, 17, 23, 36];
-        let mut blocks: Vec<Vec<u32>> = vec![vec![]; K];
-        let mut element_count: [u32; K] = [0; K];
-        let mut overflow_buffer: Vec<u32> = vec![];
+        let mut blocks: Vec<Vec<u64>> = vec![vec![]; K];
+        let mut element_count: [u64; K] = [0; K];
+        let mut overflow_buffer: Vec<u64> = vec![];
 
         let mut pointers = [(0, 0); K];
         let mut boundaries = [0; K + 1];
@@ -126,7 +200,7 @@ mod tests {
         permutate_blocks(&mut sampled_input, &decision_tree, classified_elements, &element_count, &mut pointers, &mut boundaries, &mut overflow_buffer, 0, length);
     }
 
-    fn is_equal(input: &[u32], compare: &[u32]) {
+    fn is_equal(input: &[u64], compare: &[u64]) {
         if input.len() != compare.len() {
             panic!("Length mismatch: Expected {}, got {}", compare.len(), input.len());
         }
@@ -136,5 +210,4 @@ mod tests {
                 panic!("Error at index {}: Expected {}, got {}", i, compare[i], input[i]);
             }
         }
-    }
-}
+    }*/
