@@ -12,7 +12,6 @@ impl<'a> Sorter<'a> {
 
         for i in 0..K - 1 {
             // round up to next block
-            // TODO: think about type of K and BLOCKSIZE
             sum += self.element_counts[i];
 
             let mut tmp = sum;
@@ -114,7 +113,6 @@ impl<'a> Sorter<'a> {
 
 pub fn compute_overflow_bucket(element_count: &[u64]) -> u64 {
     for i in 1..=K {
-        // TODO: check for > or >=
         if element_count[K - i] >= BLOCKSIZE as u64 {
             return K as u64 - i as u64;
         }
@@ -141,7 +139,7 @@ mod tests {
         let mut overflow_buffer: Vec<u64> = vec![];
 
         let length = input.len();
-        // TODO: do with Sorter
+
         //permutate_blocks(&mut input, &decision_tree, classified_elements, &element_count, &mut pointers, &mut boundaries, &mut overflow_buffer, 0, length);
 
         //println!("Pointers: {:?}", pointers);
@@ -151,78 +149,3 @@ mod tests {
         }
     }
 }
-
-/*pub fn sorter_permutate(sorter: &mut Sorter){
-    permutate_blocks(sorter.arr, sorter.decision_tree, sorter.classified_elements as usize, sorter.element_count, sorter.pointers, sorter.boundaries, sorter.overflow_buffer, sorter.from, sorter.to);
-}
-
-pub fn permutate_blocks(input: &mut [u64], decision_tree: &[u64], classified_elements: usize, element_count: &[u64], pointers: &mut [(i64, i64); K], boundaries: &mut [u64; K + 1], overflow_buffer: &mut Vec<u64>, from: usize, to: usize) {
-    calculate_pointers(classified_elements, &element_count, pointers, boundaries, from, to);
-    _permutate_blocks(input, decision_tree, pointers, overflow_buffer, 0, from, to);
-}
-
-fn _permutate_blocks(input: &mut [u64], decision_tree: &[u64], pointers: &mut [(i64, i64); K], overflow_buffer: &mut Vec<u64>, primary_bucket: u64, from: usize, to: usize) {
-    let mut pb: u64 = primary_bucket;
-    let mut swap_buffer = [[0; BLOCKSIZE]; 2];
-    let mut swap_buffer_idx: usize = 0;
-
-    // TODO: check if already in correct bucket, think of logic
-
-    'outer: loop {
-
-        // check if block is processed
-        if pointers[pb as usize].1 < pointers[pb as usize].0 {
-            pb = (pb + 1) % K as u64;
-            // check if cycle is finished
-            if pb == primary_bucket {
-                break 'outer;
-            }
-            continue 'outer;
-        }
-
-        // decrement read pointers
-        pointers[pb as usize].1 -= BLOCKSIZE as i64;
-
-
-        // TODO: check if already in right bucket and read < write, skip in this case
-
-        // read block into swap buffer
-        for i in 0..BLOCKSIZE {
-            swap_buffer[swap_buffer_idx][i] = input[(pointers[pb as usize].1 + BLOCKSIZE as i64 + i as i64) as usize];
-        }
-
-        'inner: loop {
-            let mut bdest = find_block(swap_buffer[swap_buffer_idx][0], decision_tree) as u64;
-            let mut wdest = &mut pointers[bdest as usize].0;
-            let mut rdest = &mut pointers[bdest as usize].1;
-
-            if *wdest <= *rdest {
-                // increment wdest pointers
-                *wdest += BLOCKSIZE as i64;
-
-                // read block into second swap buffer and write first swap buffer
-                let next_swap_buffer_idx = (swap_buffer_idx + 1) % 2;
-                for i in 0..BLOCKSIZE {
-                    swap_buffer[next_swap_buffer_idx][i] = input[*wdest as usize - BLOCKSIZE + i];
-                    input[*wdest as usize - BLOCKSIZE + i] = swap_buffer[swap_buffer_idx][i];
-                }
-                swap_buffer_idx = next_swap_buffer_idx;
-            } else {
-                *wdest += BLOCKSIZE as i64;
-                if *wdest > to as i64 {
-                    // write to overflow buffer
-                    debug!("Write to overflow buffer");
-                    for i in 0..BLOCKSIZE {
-                        overflow_buffer.push(swap_buffer[swap_buffer_idx][i]);
-                    }
-                    break 'inner;
-                }
-                // write swap buffer
-                for i in 0..BLOCKSIZE {
-                    input[*wdest as usize - BLOCKSIZE + i] = swap_buffer[swap_buffer_idx][i];
-                }
-                break 'inner;
-            }
-        }
-    }
-}*/

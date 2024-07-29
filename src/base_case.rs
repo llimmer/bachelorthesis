@@ -1,4 +1,6 @@
 pub fn insertion_sort(arr: &mut [u64]) {
+    // TODO: enhance performance
+
     for j in 1..arr.len() {
         let mut i: usize = 0;
         while arr[j] > arr[i]{

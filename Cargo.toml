@@ -3,7 +3,20 @@ name = "bachelorthesis"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "bachelorthesis"
+path = "src/lib.rs"
+
 [dependencies]
 rand = "0.9.0-alpha.1"
 log = "0.4.22"
 env_logger = "0.11.3"
+crossbeam-channel = "0.5.13"
+
+[dev-dependencies]
+criterion = { version = "0.5.1", features = ["html_reports"] }
+
+[[bench]]
+name = "my_benchmark"
+harness = false
+

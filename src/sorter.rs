@@ -2,24 +2,25 @@ use std::fmt::Display;
 use crate::config::{K, BLOCKSIZE};
 
 #[derive(Debug)]
-pub(crate) struct Sorter<'a> {
+pub struct Sorter<'a> {
     pub arr: &'a mut [u64],
-    pub decision_tree: [u64; K-1],
+    pub decision_tree: [u64; K - 1],
     pub classified_elements: usize,
     pub pointers: [(i64, i64); K],
     pub boundaries: [u64; K + 1],
     pub primary_bucket: usize,
 
-    // TODO: see how to handle threads here
     // local buffers
     pub blocks: Vec<Vec<u64>>,
     pub element_counts: [u64; K],
     pub overflow: bool,
     pub overflow_buffer: Vec<u64>,
+
+    pub parallel: bool,
 }
 
 impl<'a> Sorter<'a> {
-    pub fn new(arr: &mut [u64]) -> Box<Sorter> {
+    pub fn new_sequential(arr: &mut [u64]) -> Box<Sorter> {
         Box::new(Sorter {
             arr,
             decision_tree: [0; K - 1],
@@ -31,11 +32,28 @@ impl<'a> Sorter<'a> {
             element_counts: [0; K],
             overflow: false,
             overflow_buffer: Vec::new(),
+            parallel: false,
         })
     }
 
-    pub fn new_(arr: &mut [u64], decision_tree: [u64; K-1], classified_elements: usize, pointers: [(i64, i64); K], boundaries: [u64; K+1], primary_bucket: usize, blocks: Vec<Vec<u64>>, element_counts: [u64;K], overflow: bool, overflow_buffer: Vec<u64>) -> Box<Sorter> {
-         Box::new(Sorter {
+    pub fn new_parallel(arr: &mut [u64]) -> Box<Sorter> {
+        Box::new(Sorter {
+            arr,
+            decision_tree: [0; K - 1],
+            classified_elements: 0,
+            pointers: [(0, 0); K],
+            boundaries: [0; K + 1],
+            primary_bucket: 0,
+            blocks: vec![Vec::new(); K],
+            element_counts: [0; K],
+            overflow: false,
+            overflow_buffer: Vec::new(),
+            parallel: true,
+        })
+    }
+
+    pub fn new_(arr: &mut [u64], decision_tree: [u64; K - 1], classified_elements: usize, pointers: [(i64, i64); K], boundaries: [u64; K + 1], primary_bucket: usize, blocks: Vec<Vec<u64>>, element_counts: [u64; K], overflow: bool, overflow_buffer: Vec<u64>, parallel: bool) -> Box<Sorter> {
+        Box::new(Sorter {
             arr,
             decision_tree,
             classified_elements,
@@ -45,10 +63,10 @@ impl<'a> Sorter<'a> {
             blocks,
             element_counts,
             overflow,
-            overflow_buffer
+            overflow_buffer,
+            parallel,
         })
     }
-
 }
 
 impl Display for Sorter<'_> {
@@ -60,13 +78,13 @@ impl Display for Sorter<'_> {
         for i in 0..K {
             let mut start = sum;
             sum += self.element_counts[i];
-            write!(f, "{}[", {if current {red} else {white}})?;
-            while (start as i64) < (sum as i64) -1 {
+            write!(f, "{}[", { if current { red } else { white } })?;
+            while (start as i64) < (sum as i64) - 1 {
                 write!(f, "{} ", self.arr[start as usize])?;
                 start += 1;
             }
-            if start != sum{
-                write!(f,"{}]", self.arr[start as usize])?;
+            if start != sum {
+                write!(f, "{}]", self.arr[start as usize])?;
             } else {
                 write!(f, "]")?;
             }
