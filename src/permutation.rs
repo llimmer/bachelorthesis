@@ -1,10 +1,10 @@
 use std::cmp::max;
 use log::debug;
 use crate::config::{BLOCKSIZE, K};
-use crate::classification::find_block;
-use crate::sorter::Sorter;
+use crate::classification::{find_bucket_ips2ra, find_bucket_ips4o};
+use crate::sorter::{IPS2RaSorter, IPS4oSorter};
 
-impl<'a> Sorter<'a> {
+impl<'a> IPS4oSorter<'a> {
     fn calculate_pointers(&mut self) {
         self.boundaries[0] = 0;
         self.pointers[0].0 = 0;
@@ -70,7 +70,7 @@ impl<'a> Sorter<'a> {
             }
 
             'inner: loop {
-                let mut bdest = find_block(swap_buffer[swap_buffer_idx][0], &self.decision_tree) as u64;
+                let mut bdest = find_bucket_ips4o(swap_buffer[swap_buffer_idx][0], &self.decision_tree) as u64;
                 let mut wdest = &mut self.pointers[bdest as usize].0;
                 let mut rdest = &mut self.pointers[bdest as usize].1;
 
@@ -111,6 +111,118 @@ impl<'a> Sorter<'a> {
     }
 }
 
+
+
+
+// IPS2Ra
+
+impl<'a> IPS2RaSorter<'a> {
+    fn calculate_pointers(&mut self) {
+        self.boundaries[0] = 0;
+        self.pointers[0].0 = 0;
+        let mut sum = 0;
+
+        for i in 0..K - 1 {
+            // round up to next block
+            sum += self.element_counts[i];
+
+            let mut tmp = sum;
+            if tmp % BLOCKSIZE as u64 != 0 {
+                tmp += BLOCKSIZE as u64 - (sum % BLOCKSIZE as u64);
+            }
+            self.boundaries[i + 1] = {
+                if tmp <= self.arr.len() as u64 {
+                    tmp
+                } else {
+                    self.arr.len() as u64
+                }
+            };
+            self.pointers[i + 1].0 = tmp as i64;
+
+            if sum <= self.classified_elements as u64 {
+                self.pointers[i].1 = (tmp - BLOCKSIZE as u64) as i64;
+                //pointers[i].1 = from as i64 + (tmp-BLOCKSIZE as u64) as i64;
+            } else {
+                self.pointers[i].1 = (self.classified_elements as i64 - BLOCKSIZE as i64 - (self.classified_elements % BLOCKSIZE) as i64);
+                //pointers[i].1 = from as i64 + (classified_elements - BLOCKSIZE - classified_elements%BLOCKSIZE) as i64;
+            }
+        }
+        self.boundaries[K] = sum + self.element_counts[K - 1];
+        self.pointers[K - 1].1 = max(self.classified_elements as i64 - BLOCKSIZE as i64 - (self.classified_elements % BLOCKSIZE) as i64, 0);
+    }
+    pub fn permutate_blocks(&mut self) {
+        self.calculate_pointers();
+        let mut pb: usize = self.primary_bucket;
+        let mut swap_buffer = [[0; BLOCKSIZE]; 2];
+        let mut swap_buffer_idx: usize = 0;
+
+        // TODO: check if already in correct bucket, think of logic
+
+        'outer: loop {
+
+            // check if block is processed
+            if self.pointers[pb].1 < self.pointers[pb].0 {
+                pb = (pb+ 1usize) % K;
+                // check if cycle is finished
+                if pb == self.primary_bucket {
+                    break 'outer;
+                }
+                continue 'outer;
+            }
+
+            // decrement read pointers
+            self.pointers[pb as usize].1 -= BLOCKSIZE as i64;
+
+
+            // TODO: check if already in right bucket and read < write, skip in this case
+
+            // read block into swap buffer
+            for i in 0..BLOCKSIZE {
+                swap_buffer[swap_buffer_idx][i] = self.arr[(self.pointers[pb as usize].1 + BLOCKSIZE as i64 + i as i64) as usize];
+            }
+
+            'inner: loop {
+                let mut bdest = find_bucket_ips2ra(swap_buffer[swap_buffer_idx][0], self.level) as u64;
+                let mut wdest = &mut self.pointers[bdest as usize].0;
+                let mut rdest = &mut self.pointers[bdest as usize].1;
+
+                if *wdest <= *rdest {
+                    // increment wdest pointers
+                    *wdest += BLOCKSIZE as i64;
+
+                    // read block into second swap buffer and write first swap buffer
+                    let next_swap_buffer_idx = (swap_buffer_idx + 1) % 2;
+                    for i in 0..BLOCKSIZE {
+                        swap_buffer[next_swap_buffer_idx][i] = self.arr[*wdest as usize - BLOCKSIZE + i];
+                        self.arr[*wdest as usize - BLOCKSIZE + i] = swap_buffer[swap_buffer_idx][i];
+                    }
+                    swap_buffer_idx = next_swap_buffer_idx;
+                } else {
+                    *wdest += BLOCKSIZE as i64;
+                    if *wdest > self.arr.len() as i64 {
+                        // write to overflow buffer
+                        debug!("Write to overflow buffer");
+
+                        // TODO: debug, remove later
+                        assert_eq!(bdest, crate::permutation::compute_overflow_bucket(&self.element_counts) as u64, "Overflow bucket not correct");
+
+                        for i in 0..BLOCKSIZE {
+                            self.overflow_buffer.push(swap_buffer[swap_buffer_idx][i]);
+                        }
+                        self.overflow = true;
+                        break 'inner;
+                    }
+                    // write swap buffer
+                    for i in 0..BLOCKSIZE {
+                        self.arr[*wdest as usize - BLOCKSIZE + i] = swap_buffer[swap_buffer_idx][i];
+                    }
+                    break 'inner;
+                }
+            }
+        }
+    }
+}
+
 pub fn compute_overflow_bucket(element_count: &[u64]) -> u64 {
     for i in 1..=K {
         if element_count[K - i] >= BLOCKSIZE as u64 {
@@ -119,6 +231,8 @@ pub fn compute_overflow_bucket(element_count: &[u64]) -> u64 {
     }
     return 0;
 }
+
+
 
 
 #[cfg(test)]

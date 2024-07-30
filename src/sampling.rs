@@ -3,10 +3,10 @@ use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 use crate::config::{ALPHA, K};
 use crate::base_case::*;
-use crate::sorter::{Sorter};
+use crate::sorter::{IPS2RaSorter, IPS4oSorter};
 
 
-impl<'a> Sorter<'a> {
+impl<'a> IPS4oSorter<'a> {
     pub fn sample(&mut self) {
         let n = self.arr.len();
         let num_samples = (K as f64 * ALPHA).ceil() as usize;
@@ -16,7 +16,7 @@ impl<'a> Sorter<'a> {
 
 
         for i in 0..num_samples {
-            let j = rng.gen_range(i ..n);
+            let j = rng.gen_range(i..n);
             self.arr.swap(i, j as usize);
         }
 
@@ -39,7 +39,7 @@ impl<'a> Sorter<'a> {
 }
 
 
-fn create_decision_tree(tree: &mut [u64; K-1], splitters: &[u64]) {
+fn create_decision_tree(tree: &mut [u64; K - 1], splitters: &[u64]) {
 
     // TODO: think of equality buckets
 
@@ -64,6 +64,16 @@ fn create_decision_tree(tree: &mut [u64; K-1], splitters: &[u64]) {
     }
 }
 
+// IPS2Ra
+impl<'a> IPS2RaSorter<'a> {
+    pub fn sample(&mut self) {
 
-
+        // TODO: implement correctly
+        let max = self.arr.iter().max().unwrap();
+        let lz = max.leading_zeros();
+        let klog2 = (K as u64).ilog2();
+        let zero_blocks = (lz as f64 /klog2 as f64).floor() as u32;
+        self.level = zero_blocks as usize;
+    }
+}
 

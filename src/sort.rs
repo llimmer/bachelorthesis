@@ -5,12 +5,12 @@ use std::thread;
 use log::{debug, error, info};
 use crate::base_case::insertion_sort;
 use crate::config::{BLOCKSIZE, K, NUM_THREADS, THRESHOLD};
-use crate::sorter::Sorter;
+use crate::sorter::{IPS2RaSorter, IPS4oSorter};
 use crate::parallel::sort_parallel;
 
 pub fn sort(arr: &mut [u64], parallel: bool) {
     if !parallel {
-        let mut s = Sorter::new_sequential(arr);
+        let mut s = IPS4oSorter::new_sequential(arr);
         s.sort_sequential();
     } else {
 
@@ -20,7 +20,7 @@ pub fn sort(arr: &mut [u64], parallel: bool) {
 
         let mut handles = vec![];
 
-        let mut s = Sorter::new_parallel(arr);
+        let mut s = IPS4oSorter::new_parallel(arr);
         {
             let mut queue = task_queue.lock().unwrap();
             queue.push_back(s);
@@ -45,4 +45,12 @@ pub fn sort(arr: &mut [u64], parallel: bool) {
         }
     }
     info!("Sorted array: {:?}", arr);
+}
+
+pub fn ips2ra_sort(arr: &mut [u64]) {
+    let mut s = IPS2RaSorter::new_sequential(arr, 0);
+    s.sample();
+    debug!("Array after sampling: {:?}", s.arr);
+    info!("Level: {:?}", s.level);
+    s.sort_sequential();
 }

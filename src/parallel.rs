@@ -5,9 +5,9 @@ use std::thread;
 use log::debug;
 use crate::base_case::insertion_sort;
 use crate::config::{K, THRESHOLD};
-use crate::sorter::Sorter;
+use crate::sorter::IPS4oSorter;
 
-pub(crate) fn sort_parallel(task_queue: Arc<Mutex<VecDeque<Box<Sorter>>>>,
+pub(crate) fn sort_parallel(task_queue: Arc<Mutex<VecDeque<Box<IPS4oSorter>>>>,
                             task_counter: Arc<AtomicUsize>,
                             thread_counter: Arc<AtomicUsize>) {
     'outer: loop {
@@ -28,7 +28,7 @@ pub(crate) fn sort_parallel(task_queue: Arc<Mutex<VecDeque<Box<Sorter>>>>,
                 continue 'outer;
             }
             task.sample();
-            task.classified_elements = task.classify();
+            task.classify();
             task.permutate_blocks();
             task.cleanup();
 
@@ -44,7 +44,7 @@ pub(crate) fn sort_parallel(task_queue: Arc<Mutex<VecDeque<Box<Sorter>>>>,
                 let (current, next) = all.split_at_mut(task.element_counts[i] as usize);
                 all = next;
                 debug!("{:?} adding task {:?} to queue", thread::current().id(), current);
-                let mut new_struct = Sorter::new_parallel(current);
+                let mut new_struct = IPS4oSorter::new_parallel(current);
                 {
                     let mut queue = task_queue.lock().unwrap();
                     queue.push_back(new_struct);
@@ -53,7 +53,7 @@ pub(crate) fn sort_parallel(task_queue: Arc<Mutex<VecDeque<Box<Sorter>>>>,
             debug!("{:?} adding task {:?} to queue", thread::current().id(), all);
             {
                 let mut queue = task_queue.lock().unwrap();
-                queue.push_back(Sorter::new_parallel(all));
+                queue.push_back(IPS4oSorter::new_parallel(all));
             }
 
 

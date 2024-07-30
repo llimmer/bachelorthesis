@@ -1,6 +1,6 @@
-pub const K: usize = 256;
-pub const BLOCKSIZE: usize = 1024;
-pub const THRESHOLD: usize = 4096;
+pub const K: usize = 4;
+pub const BLOCKSIZE: usize = 8;
+pub const THRESHOLD: usize = 2;
 pub const ALPHA: f64 = 2.0;
 pub const NUM_THREADS: usize = 16;
 
