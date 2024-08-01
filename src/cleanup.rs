@@ -3,6 +3,7 @@ use crate::permutation::compute_overflow_bucket;
 use crate::sorter::{IPS2RaSorter, Task};
 
 impl IPS2RaSorter {
+    #[inline(never)]
     pub fn cleanup(&mut self, task: &mut Task) {
         let mut sum = 0;
         let overflow_bucket = compute_overflow_bucket(&self.element_counts) as usize;
@@ -18,7 +19,7 @@ impl IPS2RaSorter {
                 let mut tailsize = sum as usize + BLOCKSIZE - write_ptr as usize;
                 assert!(tailsize >= 0);
                 assert_eq!(self.overflow_buffer.len(), BLOCKSIZE);
-                let to_write: usize = BLOCKSIZE + self.blocks[i].len();
+                let to_write: usize = BLOCKSIZE + self.block_counts[i];
 
                 // case overflowbuffer > frontspace
                 let mut to_write_front = to_write - tailsize as usize;
@@ -37,7 +38,7 @@ impl IPS2RaSorter {
 
                     // fill back with blocks
                     let target_slice = &mut task.arr[dst..dst + tailsize];
-                    target_slice.copy_from_slice(&self.blocks[i]);
+                    target_slice.copy_from_slice(&self.blocks[i][0..self.block_counts[i]]);
                 } else { // case overflowbuffer <= frontspace
                     // fill front
                     let target_slice = &mut task.arr[dst..dst + BLOCKSIZE];
@@ -82,10 +83,10 @@ impl IPS2RaSorter {
             }
 
             // fill the front with remaining elements from blocks buffer
-            let remaining = self.blocks[i].len() - to_write;
+            let remaining = self.block_counts[i] - to_write;
             if remaining > 0 {
                 let target_slice = &mut task.arr[dst..dst + remaining];
-                target_slice.copy_from_slice(&self.blocks[i][to_write..]);
+                target_slice.copy_from_slice(&self.blocks[i][to_write..self.block_counts[i]]);
             }
         }
     }
@@ -118,7 +119,7 @@ mod tests {
         let mut overflow_buffer: Vec<u64> = vec![];
         //let mut s = Sorter::new_(&mut input, decision_tree, 0, pointers, boundaries, 0, blocks, element_counts, false, overflow_buffer);
         //s.cleanup();
-//
+        //
         //println!("{}", s);
 
         check_range(&input, 1, 64);

@@ -33,22 +33,38 @@ struct Block<'a> {
         count: usize,
 }
 
-
 fn main() {
     env_logger::builder()
         .filter_level(LevelFilter::Error)
         .init();
+
     let mut rng = StdRng::seed_from_u64(12345);
-    let mut arr: Vec<u64> = (0..10_000_000).collect();
+    let mut arr: Vec<u64> = (0..100_000_000).collect();
     arr.shuffle(&mut rng);
-    let arr2 = arr.clone();
+    let mut arr2 = arr.clone();
+    let mut arr3 = arr.clone();
 
     //println!("unsorted: {:?}", arr);
 
+    let start = Instant::now();
     sort(&mut arr, false);
-    //println!("sorted: {:?}", arr);
+    let duration = start.elapsed();
+    println!("IPS2Ra Sort Sequential: {:?}", duration);
+
+    let start = Instant::now();
+    sort(&mut arr2, true);
+    let duration = start.elapsed();
+    println!("IPS2Ra Sort Parallel: {:?}", duration);
+
+
+    let start = Instant::now();
+    arr3.sort_unstable();
+    let duration = start.elapsed();
+    println!("Quicksort: {:?}", duration);
 
     verify_sorted(&arr);
+    verify_sorted(&arr2);
+
 }
 
 

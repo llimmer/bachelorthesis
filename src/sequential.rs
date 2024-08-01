@@ -12,17 +12,17 @@ impl IPS2RaSorter {
         }
         debug!("Input: {:?}", task.arr);
 
-        self.classify(task);
+        unsafe{self.classify(task)};
         debug!("Array after classification: {:?}", task.arr);
-        info!("Classified Elements: {}", self.classified_elements);
-        info!("Element Count: {:?}", self.element_counts);
-        info!("Blocks: {:?}", self.blocks);
+        debug!("Classified Elements: {}", self.classified_elements);
+        debug!("Element Count: {:?}", self.element_counts);
+        debug!("Blocks: {:?}", self.blocks);
 
         self.permutate_blocks(task);
         debug!("Array after permutation: {:?}", task.arr);
-        info!("Pointers: {:?}", self.pointers);
-        info!("Boundaries: {:?}", self.boundaries);
-        info!("Overflow Buffer: {:?}", self.overflow_buffer);
+        debug!("Pointers: {:?}", self.pointers);
+        debug!("Boundaries: {:?}", self.boundaries);
+        debug!("Overflow Buffer: {:?}", self.overflow_buffer);
 
         self.cleanup(task);
 
@@ -34,6 +34,9 @@ impl IPS2RaSorter {
         for i in 0..K {
             let start = sum;
             sum += element_counts_copy[i];
+            if element_counts_copy[i] <= 1 {
+                continue;
+            }
             let mut new_task = Task::new(&mut task.arr[start as usize..sum as usize], task.level+1);
             self.clear();
             self.sort_sequential(&mut new_task);

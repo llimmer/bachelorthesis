@@ -1,8 +1,8 @@
 pub const K: usize = 16;
-pub const BLOCKSIZE: usize = 16;
-pub const THRESHOLD: usize = 8;
+pub const BLOCKSIZE: usize = 256;
+pub const THRESHOLD: usize = 128;
 pub const ALPHA: f64 = 2.0;
-pub const NUM_THREADS: usize = 16;
+pub const NUM_THREADS: usize = 8;
 
 const fn is_power_of_two(x: usize) -> bool {
     (x!=0) && ((x & (x-1)) == 0)

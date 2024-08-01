@@ -28,7 +28,7 @@ impl IPS2RaSorter {
             self.pointers[i + 1].0 = tmp as i64;
 
             if sum <= self.classified_elements as u64 {
-                self.pointers[i].1 = (tmp - BLOCKSIZE as u64) as i64;
+                self.pointers[i].1 = (tmp as i64 - BLOCKSIZE as i64);
                 //pointers[i].1 = from as i64 + (tmp-BLOCKSIZE as u64) as i64;
             } else {
                 self.pointers[i].1 = (self.classified_elements as i64 - BLOCKSIZE as i64 - (self.classified_elements % BLOCKSIZE) as i64);

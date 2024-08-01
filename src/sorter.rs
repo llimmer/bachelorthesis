@@ -15,14 +15,16 @@ impl Task<'_> {
 }
 #[derive(Debug)]
 pub struct IPS2RaSorter {
+    pub block_counts: [usize; K],
+    pub element_counts: [u64; K],
+
     pub classified_elements: usize,
     pub pointers: [(i64, i64); K],
     pub boundaries: [u64; K + 1],
     pub primary_bucket: usize,
 
     // local buffers
-    pub blocks: Vec<Vec<u64>>,
-    pub element_counts: [u64; K],
+    pub blocks: [[u64; BLOCKSIZE]; K],
     pub overflow: bool,
     pub overflow_buffer: Vec<u64>,
 
@@ -35,7 +37,8 @@ impl IPS2RaSorter {
             pointers: [(0, 0); K],
             boundaries: [0; K + 1],
             primary_bucket: 0,
-            blocks: vec![Vec::with_capacity(BLOCKSIZE); K],
+            blocks: [[0; BLOCKSIZE]; K],
+            block_counts: [0; K],
             element_counts: [0; K],
             overflow: false,
             overflow_buffer: Vec::new(),
@@ -44,9 +47,11 @@ impl IPS2RaSorter {
     }
 
     pub fn clear(&mut self) {
-        for i in 0..K {
-            self.blocks[i].clear();
-            self.element_counts[i] = 0;
+        for i in self.block_counts.iter_mut() {
+            *i = 0;
+        }
+        for i in self.element_counts.iter_mut() {
+            *i = 0;
         }
         self.primary_bucket = 0;
         self.overflow = false;
@@ -59,7 +64,8 @@ impl IPS2RaSorter {
             pointers: [(0, 0); K],
             boundaries: [0; K + 1],
             primary_bucket: 0,
-            blocks: vec![Vec::new(); K],
+            blocks: [[0; BLOCKSIZE]; K],
+            block_counts: [0; K],
             element_counts: [0; K],
             overflow: false,
             overflow_buffer: Vec::new(),
@@ -78,7 +84,7 @@ impl IPS2RaSorter {
             sum += self.element_counts[i];
             res.push_str(&format!("{}[", { if current { red } else { white } }));
             while (start as i64) < (sum as i64) - 1 {
-                 res.push_str(&format!("{} ", task.arr[start as usize]));
+                res.push_str(&format!("{} ", task.arr[start as usize]));
                 start += 1;
             }
             if start != sum {
