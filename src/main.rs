@@ -19,9 +19,8 @@ mod sorter;
 mod sequential;
 mod parallel;
 
-use sorter::IPS4oSorter;
 use crate::base_case::insertion_sort;
-use crate::sort::{ips2ra_sort, sort};
+use crate::sort::sort;
 use crate::sorter::IPS2RaSorter;
 
 fn verify_sorted(arr: &Vec<u64>) {
@@ -29,38 +28,27 @@ fn verify_sorted(arr: &Vec<u64>) {
         assert!(arr[i - 1] <= arr[i]);
     }
 }
+struct Block<'a> {
+        arr: &'a mut[u64],
+        count: usize,
+}
+
 
 fn main() {
     env_logger::builder()
-        .filter_level(LevelFilter::Debug)
+        .filter_level(LevelFilter::Error)
         .init();
     let mut rng = StdRng::seed_from_u64(12345);
-    let mut arr: Vec<u64> = (0..4096).collect();
+    let mut arr: Vec<u64> = (0..10_000_000).collect();
     arr.shuffle(&mut rng);
-    // print array as binary
-    print!("Array: [");
-    for i in 0..arr.len()-1 {
-        print!("{}: {:06b}, ", arr[i], arr[i]);
-    }
-    println!("{}: {:06b}]", arr[arr.len()-1], arr[arr.len()-1]);
+    let arr2 = arr.clone();
 
-    println!("{}", classification::find_bucket_ips2ra(31, 29));
+    //println!("unsorted: {:?}", arr);
 
-    ips2ra_sort(&mut arr);
+    sort(&mut arr, false);
+    //println!("sorted: {:?}", arr);
 
     verify_sorted(&arr);
-
-    println!("sorted: {:?}", arr);
-
-
-    //for i in 0..1000 {
-    //    let n = rng.gen_range(256..1_000_000);
-    //    //let n = 10_000_000;
-    //    let mut arr: Vec<u64> = (0..n).collect();
-    //    arr.shuffle(&mut rng);
-//
-    //    sort(&mut arr, false);
-    //    verify_sorted(&arr);
-    //}
-    //println!("Sequential sort successful!");
 }
+
+

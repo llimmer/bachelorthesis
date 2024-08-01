@@ -1,10 +1,9 @@
 use crate::config::{BLOCKSIZE, K};
-use crate::classification::find_bucket_ips4o;
 use crate::permutation::compute_overflow_bucket;
-use crate::sorter::{IPS2RaSorter, IPS4oSorter};
+use crate::sorter::{IPS2RaSorter, Task};
 
-impl<'a> IPS4oSorter<'a> {
-    pub fn cleanup(&mut self) {
+impl IPS2RaSorter {
+    pub fn cleanup(&mut self, task: &mut Task) {
         let mut sum = 0;
         let overflow_bucket = compute_overflow_bucket(&self.element_counts) as usize;
 
@@ -25,34 +24,34 @@ impl<'a> IPS4oSorter<'a> {
                 let mut to_write_front = to_write - tailsize as usize;
                 if to_write_front < BLOCKSIZE {
                     // fill front
-                    let target_slice = &mut self.arr[dst..dst + to_write_front];
+                    let target_slice = &mut task.arr[dst..dst + to_write_front];
                     target_slice.copy_from_slice(&self.overflow_buffer[..to_write_front]);
                     dst = sum as usize - tailsize;
 
                     // fill back
                     let overflow_back = BLOCKSIZE - to_write_front;
-                    let target_slice = &mut self.arr[dst..dst + overflow_back];
+                    let target_slice = &mut task.arr[dst..dst + overflow_back];
                     target_slice.copy_from_slice(&self.overflow_buffer[to_write_front..]);
                     dst += overflow_back;
                     tailsize -= overflow_back;
 
                     // fill back with blocks
-                    let target_slice = &mut self.arr[dst..dst + tailsize];
+                    let target_slice = &mut task.arr[dst..dst + tailsize];
                     target_slice.copy_from_slice(&self.blocks[i]);
                 } else { // case overflowbuffer <= frontspace
                     // fill front
-                    let target_slice = &mut self.arr[dst..dst + BLOCKSIZE];
+                    let target_slice = &mut task.arr[dst..dst + BLOCKSIZE];
                     target_slice.copy_from_slice(&self.overflow_buffer[..]);
                     dst += BLOCKSIZE;
                     to_write_front -= BLOCKSIZE;
 
                     // fill front with blocks
-                    let target_slice = &mut self.arr[dst..dst + to_write_front];
+                    let target_slice = &mut task.arr[dst..dst + to_write_front];
                     target_slice.copy_from_slice(&self.blocks[i][..to_write_front]);
                     dst = sum as usize - tailsize;
 
                     // fill back with blocks
-                    let target_slice = &mut self.arr[dst..dst + tailsize];
+                    let target_slice = &mut task.arr[dst..dst + tailsize];
                     target_slice.copy_from_slice(&self.blocks[i][to_write_front..]);
                 }
                 continue;
@@ -60,7 +59,7 @@ impl<'a> IPS4oSorter<'a> {
 
             let mut to_write: usize = 0;
 
-            if (write_ptr <= self.boundaries[i] as i64 || write_ptr as usize > self.arr.len()) {
+            if (write_ptr <= self.boundaries[i] as i64 || write_ptr as usize > task.arr.len()) {
                 // do nothing
             }
             // write ptr > sum => (write ptr-sum) elements overwrite to right
@@ -69,15 +68,15 @@ impl<'a> IPS4oSorter<'a> {
                 // read elements and write to correct position
                 // TODO: check if possible with slice copy
                 for j in 0..((write_ptr as u64 - sum) as usize) {
-                    let element = self.arr[(sum as usize + j) as usize];
-                    self.arr[dst] = element;
+                    let element = task.arr[(sum as usize + j) as usize];
+                    task.arr[dst] = element;
                     dst += 1;
                 }
             } else {
                 // fill the back
                 to_write = sum as usize - write_ptr as usize;
                 if to_write > 0 {
-                    let target_slice = &mut self.arr[write_ptr as usize..sum as usize];
+                    let target_slice = &mut task.arr[write_ptr as usize..sum as usize];
                     target_slice.copy_from_slice(&self.blocks[i][..to_write]);
                 }
             }
@@ -85,96 +84,7 @@ impl<'a> IPS4oSorter<'a> {
             // fill the front with remaining elements from blocks buffer
             let remaining = self.blocks[i].len() - to_write;
             if remaining > 0 {
-                let target_slice = &mut self.arr[dst..dst + remaining];
-                target_slice.copy_from_slice(&self.blocks[i][to_write..]);
-            }
-        }
-    }
-}
-
-impl<'a> IPS2RaSorter<'a> {
-    pub fn cleanup(&mut self) {
-        let mut sum = 0;
-        let overflow_bucket = compute_overflow_bucket(&self.element_counts) as usize;
-
-        for i in 0..K {
-            // dst = start of bucket
-            let mut dst = sum as usize;
-
-            let write_ptr = self.pointers[i].0;
-            sum += self.element_counts[i];
-
-            if (self.overflow && i == overflow_bucket) {
-                let mut tailsize = sum as usize + BLOCKSIZE - write_ptr as usize;
-                assert!(tailsize >= 0);
-                assert_eq!(self.overflow_buffer.len(), BLOCKSIZE);
-                let to_write: usize = BLOCKSIZE + self.blocks[i].len();
-
-                // case overflowbuffer > frontspace
-                let mut to_write_front = to_write - tailsize as usize;
-                if to_write_front < BLOCKSIZE {
-                    // fill front
-                    let target_slice = &mut self.arr[dst..dst + to_write_front];
-                    target_slice.copy_from_slice(&self.overflow_buffer[..to_write_front]);
-                    dst = sum as usize - tailsize;
-
-                    // fill back
-                    let overflow_back = BLOCKSIZE - to_write_front;
-                    let target_slice = &mut self.arr[dst..dst + overflow_back];
-                    target_slice.copy_from_slice(&self.overflow_buffer[to_write_front..]);
-                    dst += overflow_back;
-                    tailsize -= overflow_back;
-
-                    // fill back with blocks
-                    let target_slice = &mut self.arr[dst..dst + tailsize];
-                    target_slice.copy_from_slice(&self.blocks[i]);
-                } else { // case overflowbuffer <= frontspace
-                    // fill front
-                    let target_slice = &mut self.arr[dst..dst + BLOCKSIZE];
-                    target_slice.copy_from_slice(&self.overflow_buffer[..]);
-                    dst += BLOCKSIZE;
-                    to_write_front -= BLOCKSIZE;
-
-                    // fill front with blocks
-                    let target_slice = &mut self.arr[dst..dst + to_write_front];
-                    target_slice.copy_from_slice(&self.blocks[i][..to_write_front]);
-                    dst = sum as usize - tailsize;
-
-                    // fill back with blocks
-                    let target_slice = &mut self.arr[dst..dst + tailsize];
-                    target_slice.copy_from_slice(&self.blocks[i][to_write_front..]);
-                }
-                continue;
-            }
-
-            let mut to_write: usize = 0;
-
-            if (write_ptr <= self.boundaries[i] as i64 || write_ptr as usize > self.arr.len()) {
-                // do nothing
-            }
-            // write ptr > sum => (write ptr-sum) elements overwrite to right
-            // TODO: check if i!=K-1 is necessary
-            else if write_ptr > sum as i64 && i != K - 1 {
-                // read elements and write to correct position
-                // TODO: check if possible with slice copy
-                for j in 0..((write_ptr as u64 - sum) as usize) {
-                    let element = self.arr[(sum as usize + j) as usize];
-                    self.arr[dst] = element;
-                    dst += 1;
-                }
-            } else {
-                // fill the back
-                to_write = sum as usize - write_ptr as usize;
-                if to_write > 0 {
-                    let target_slice = &mut self.arr[write_ptr as usize..sum as usize];
-                    target_slice.copy_from_slice(&self.blocks[i][..to_write]);
-                }
-            }
-
-            // fill the front with remaining elements from blocks buffer
-            let remaining = self.blocks[i].len() - to_write;
-            if remaining > 0 {
-                let target_slice = &mut self.arr[dst..dst + remaining];
+                let target_slice = &mut task.arr[dst..dst + remaining];
                 target_slice.copy_from_slice(&self.blocks[i][to_write..]);
             }
         }
