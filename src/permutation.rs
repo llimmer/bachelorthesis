@@ -28,10 +28,10 @@ impl IPS2RaSorter {
             self.pointers[i + 1].0 = tmp as i64;
 
             if sum <= self.classified_elements as u64 {
-                self.pointers[i].1 = (tmp as i64 - BLOCKSIZE as i64);
+                self.pointers[i].1 = tmp as i64 - BLOCKSIZE as i64;
                 //pointers[i].1 = from as i64 + (tmp-BLOCKSIZE as u64) as i64;
             } else {
-                self.pointers[i].1 = (self.classified_elements as i64 - BLOCKSIZE as i64 - (self.classified_elements % BLOCKSIZE) as i64);
+                self.pointers[i].1 = self.classified_elements as i64 - BLOCKSIZE as i64 - (self.classified_elements % BLOCKSIZE) as i64;
                 //pointers[i].1 = from as i64 + (classified_elements - BLOCKSIZE - classified_elements%BLOCKSIZE) as i64;
             }
         }
@@ -70,9 +70,9 @@ impl IPS2RaSorter {
             }
 
             'inner: loop {
-                let mut bdest = find_bucket_ips2ra(swap_buffer[swap_buffer_idx][0], task.level) as u64;
-                let mut wdest = &mut self.pointers[bdest as usize].0;
-                let mut rdest = &mut self.pointers[bdest as usize].1;
+                let bdest = find_bucket_ips2ra(swap_buffer[swap_buffer_idx][0], task.level) as u64;
+                let wdest = &mut self.pointers[bdest as usize].0;
+                let rdest = &mut self.pointers[bdest as usize].1;
 
                 if *wdest <= *rdest {
                     // increment wdest pointers

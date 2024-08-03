@@ -7,9 +7,9 @@ use crate::base_case::insertion_sort;
 use crate::config::{K, THRESHOLD};
 use crate::sorter::{IPS2RaSorter, Task};
 
-pub(crate) fn sort_parallel(task_queue: Arc<Mutex<VecDeque<Task>>>,
-                            task_counter: Arc<AtomicUsize>,
-                            thread_counter: Arc<AtomicUsize>) {
+pub(crate) fn _sort_parallel(task_queue: Arc<Mutex<VecDeque<Task>>>,
+                             task_counter: Arc<AtomicUsize>,
+                             thread_counter: Arc<AtomicUsize>) {
     info!("{:?} started", thread::current().id());
     let mut sorter = IPS2RaSorter::new_parallel();
     'outer: loop {
@@ -40,8 +40,6 @@ pub(crate) fn sort_parallel(task_queue: Arc<Mutex<VecDeque<Task>>>,
             debug!("{:?} processed task {}", thread::current().id(), sorter.to_string(&task));
 
             // Recursion:
-            let mut sum = 0;
-
             // add new tasks to queue
             let mut all = task.arr;
             for i in 0..K {
@@ -52,7 +50,7 @@ pub(crate) fn sort_parallel(task_queue: Arc<Mutex<VecDeque<Task>>>,
                 }
                 info!("{:?} adding task of length {:?} to queue", thread::current().id(), current.len());
                 task_counter.fetch_add(1, Ordering::SeqCst);
-                let mut new_task = Task::new(current, task.level + 1);
+                let new_task = Task::new(current, task.level + 1);
                 {
                     let mut queue = task_queue.lock().unwrap();
                     queue.push_back(new_task);

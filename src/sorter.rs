@@ -1,4 +1,3 @@
-use std::fmt::Display;
 use crate::config::{K, BLOCKSIZE};
 pub struct Task<'a> {
     pub arr: &'a mut [u64],

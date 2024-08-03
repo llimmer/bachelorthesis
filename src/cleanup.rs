@@ -15,9 +15,8 @@ impl IPS2RaSorter {
             let write_ptr = self.pointers[i].0;
             sum += self.element_counts[i];
 
-            if (self.overflow && i == overflow_bucket) {
+            if self.overflow && i == overflow_bucket {
                 let mut tailsize = sum as usize + BLOCKSIZE - write_ptr as usize;
-                assert!(tailsize >= 0);
                 assert_eq!(self.overflow_buffer.len(), BLOCKSIZE);
                 let to_write: usize = BLOCKSIZE + self.block_counts[i];
 
@@ -60,7 +59,7 @@ impl IPS2RaSorter {
 
             let mut to_write: usize = 0;
 
-            if (write_ptr <= self.boundaries[i] as i64 || write_ptr as usize > task.arr.len()) {
+            if write_ptr <= self.boundaries[i] as i64 || write_ptr as usize > task.arr.len() {
                 // do nothing
             }
             // write ptr > sum => (write ptr-sum) elements overwrite to right

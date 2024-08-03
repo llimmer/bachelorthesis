@@ -1,8 +1,4 @@
-use log::debug;
-use rand::{Rng, SeedableRng};
-use rand::rngs::StdRng;
 use crate::config::{ALPHA, K};
-use crate::base_case::*;
 use crate::sorter::{IPS2RaSorter, Task};
 
 impl <'a> Task<'_>{
