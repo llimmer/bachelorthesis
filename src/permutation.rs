@@ -19,10 +19,10 @@ impl IPS2RaSorter {
                 tmp += BLOCKSIZE as u64 - (sum % BLOCKSIZE as u64);
             }
             self.boundaries[i + 1] = {
-                if tmp <= task.arr.len() as u64 {
+                if tmp <= task.data.len() as u64 {
                     tmp
                 } else {
-                    task.arr.len() as u64
+                    task.data.len() as u64
                 }
             };
             self.pointers[i + 1].0 = tmp as i64;
@@ -66,7 +66,7 @@ impl IPS2RaSorter {
 
             // read block into swap buffer
             for i in 0..BLOCKSIZE {
-                swap_buffer[swap_buffer_idx][i] = task.arr[(self.pointers[pb as usize].1 + BLOCKSIZE as i64 + i as i64) as usize];
+                swap_buffer[swap_buffer_idx][i] = task.data[(self.pointers[pb as usize].1 + BLOCKSIZE as i64 + i as i64) as usize];
             }
 
             'inner: loop {
@@ -81,13 +81,13 @@ impl IPS2RaSorter {
                     // read block into second swap buffer and write first swap buffer
                     let next_swap_buffer_idx = (swap_buffer_idx + 1) % 2;
                     for i in 0..BLOCKSIZE {
-                        swap_buffer[next_swap_buffer_idx][i] = task.arr[*wdest as usize - BLOCKSIZE + i];
-                        task.arr[*wdest as usize - BLOCKSIZE + i] = swap_buffer[swap_buffer_idx][i];
+                        swap_buffer[next_swap_buffer_idx][i] = task.data[*wdest as usize - BLOCKSIZE + i];
+                        task.data[*wdest as usize - BLOCKSIZE + i] = swap_buffer[swap_buffer_idx][i];
                     }
                     swap_buffer_idx = next_swap_buffer_idx;
                 } else {
                     *wdest += BLOCKSIZE as i64;
-                    if *wdest > task.arr.len() as i64 {
+                    if *wdest > task.data.len() as i64 {
                         // write to overflow buffer
                         debug!("Write to overflow buffer");
 
@@ -102,7 +102,7 @@ impl IPS2RaSorter {
                     }
                     // write swap buffer
                     for i in 0..BLOCKSIZE {
-                        task.arr[*wdest as usize - BLOCKSIZE + i] = swap_buffer[swap_buffer_idx][i];
+                        task.data[*wdest as usize - BLOCKSIZE + i] = swap_buffer[swap_buffer_idx][i];
                     }
                     break 'inner;
                 }

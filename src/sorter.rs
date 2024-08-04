@@ -1,15 +1,34 @@
-use crate::config::{K, BLOCKSIZE};
+use std::sync::atomic::Ordering;
+use crate::config::{K, BLOCKSIZE, THRESHOLD};
 pub struct Task<'a> {
-    pub arr: &'a mut [u64],
+    pub data: &'a mut [u64],
     pub level: usize,
 }
 
-impl Task<'_> {
-    pub fn new(arr: &mut [u64], level: usize) -> Task {
-        Task {
-            arr,
-            level,
+impl<'a> Task<'a> {
+    pub fn new(data: &'a mut [u64], level: usize) -> Self {
+        Self { data, level }
+    }
+
+    pub fn is_base_case(&self) -> bool {
+        self.data.len() <= THRESHOLD
+    }
+
+    pub(crate) fn generate_subtasks(&mut self, element_counts: &[u64; K]) -> Vec<Task> {
+        let mut res = Vec::with_capacity(K);
+        let (first, mut rest) = self.data.split_at_mut(element_counts[0] as usize);
+        if first.len() > 1 {
+            res.push(Task::new(first, self.level + 1));
         }
+        for i in 1..K {
+            let (left, right) = rest.split_at_mut(element_counts[i] as usize);
+            rest = right;
+            if left.len() > 1 {
+                 res.push(Task::new(left, self.level + 1));
+            }
+
+        }
+        res
     }
 }
 #[derive(Debug)]
@@ -57,8 +76,9 @@ impl IPS2RaSorter {
         self.overflow_buffer.clear();
     }
 
-    pub fn new_parallel() -> Box<Self> {
-        Box::new(Self {
+    pub fn new_parallel() -> Self {
+        println!("Creating new parallel sorter");
+        Self {
             classified_elements: 0,
             pointers: [(0, 0); K],
             boundaries: [0; K + 1],
@@ -69,7 +89,7 @@ impl IPS2RaSorter {
             overflow: false,
             overflow_buffer: Vec::new(),
             parallel: true,
-        })
+        }
     }
 
     pub fn to_string(&self, task: &Task) -> String {
@@ -83,11 +103,11 @@ impl IPS2RaSorter {
             sum += self.element_counts[i];
             res.push_str(&format!("{}[", { if current { red } else { white } }));
             while (start as i64) < (sum as i64) - 1 {
-                res.push_str(&format!("{} ", task.arr[start as usize]));
+                res.push_str(&format!("{} ", task.data[start as usize]));
                 start += 1;
             }
             if start != sum {
-                res.push_str(&format!("{}]", task.arr[start as usize]));
+                res.push_str(&format!("{}]", task.data[start as usize]));
             } else {
                 res.push_str("]");
             }

@@ -35,29 +35,29 @@ fn main() {
     let mut rng = StdRng::seed_from_u64(12345);
     let mut arr: Vec<u64> = (0..1_000_000_000).collect();
     arr.shuffle(&mut rng);
-    let mut arr2 = arr.clone();
-    let mut arr3 = arr.clone();
+    //let mut arr2 = arr.clone();
+    //let mut arr3 = arr.clone();
 
-    //println!("unsorted: {:?}", arr);
+    println!("Start sorting");
 
-    let start = Instant::now();
-    sort(&mut arr);
-    let duration = start.elapsed();
-    println!("IPS2Ra Sort Sequential: {:?}", duration);
-
-    let start = Instant::now();
-    sort_parallel(&mut arr2);
-    let duration = start.elapsed();
-    println!("IPS2Ra Sort Parallel: {:?}", duration);
-
+    //let start = Instant::now();
+    //sort(&mut arr);
+    //let duration = start.elapsed();
+    //println!("Time elapsed in sort() is: {:?}", duration);
 
     let start = Instant::now();
-    arr3.sort_unstable();
+    sort_parallel(&mut arr);
     let duration = start.elapsed();
-    println!("Quicksort: {:?}", duration);
+    println!("Time elapsed in sort_parallel() is: {:?}", duration);
 
-    verify_sorted(&arr);
-    verify_sorted(&arr2);
+    //let start = Instant::now();
+    //arr3.sort_unstable();
+    //let duration = start.elapsed();
+    //println!("Time elapsed in sort_unstable() is: {:?}", duration);
+
+    //verify_sorted(&arr);
+    //verify_sorted(&arr2);
+    //verify_sorted(&arr3);
 }
 
 

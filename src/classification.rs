@@ -5,8 +5,8 @@ impl IPS2RaSorter {
     pub unsafe fn classify(&mut self, task: &mut Task) {
         let mut write_idx = 0;
 
-        for i in 0..task.arr.len() {
-            let element = task.arr.get_unchecked(i);
+        for i in 0..task.data.len() {
+            let element = task.data.get_unchecked(i);
             let block_idx = find_bucket_ips2ra(*element, task.level);
             *self.element_counts.get_unchecked_mut(block_idx) += 1;
 
@@ -15,7 +15,7 @@ impl IPS2RaSorter {
             *self.block_counts.get_unchecked_mut(block_idx) += 1;
 
             if *self.block_counts.get_unchecked(block_idx) == BLOCKSIZE {
-                let target_slice = &mut task.arr[write_idx..write_idx + BLOCKSIZE];
+                let target_slice = &mut task.data[write_idx..write_idx + BLOCKSIZE];
                 target_slice.copy_from_slice(&self.blocks[block_idx]);
                 write_idx += BLOCKSIZE;
                 *self.block_counts.get_unchecked_mut(block_idx) = 0;
