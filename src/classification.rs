@@ -1,6 +1,5 @@
-use std::process::exit;
-use log::debug;
-use crate::config::{K, BLOCKSIZE, LBA_SIZE, DMA_BUFFERS};
+use vroom::memory::DmaSlice;
+use crate::config::{K, BLOCKSIZE, HUGE_PAGES, HUGE_PAGE_SIZE, CHUNKS_PER_HUGE_PAGE, CHUNK_SIZE, LBA_PER_CHUNK, ELEMENTS_PER_CHUNK, ELEMENTS_PER_HUGE_PAGE};
 use crate::conversion::{u64_to_u8_slice, u8_to_u64};
 use crate::sorter::{DMATask, IPS2RaSorter, IPS2RaSorterDMA, Task};
 
@@ -25,6 +24,8 @@ impl IPS2RaSorter {
                 target_slice.copy_from_slice(&self.blocks[block_idx]);
                 write_idx += BLOCKSIZE;
                 *self.block_counts.get_unchecked_mut(block_idx) = 0;
+
+
             }
         }
 
@@ -37,50 +38,87 @@ impl IPS2RaSorter {
 
 impl IPS2RaSorterDMA {
     pub unsafe fn classify(&mut self, task: &mut DMATask) {
-        println!("Starting DMA classification");
-        let mut lba = 0;
+        println!("Starting DMA classification: level {}, Chunks/HP: {}, tmp: {}", task.level, CHUNKS_PER_HUGE_PAGE, ELEMENTS_PER_CHUNK*CHUNKS_PER_HUGE_PAGE);
+        let mut write_hugepage = 0;
+        let mut write_chunk = 0;
         let mut write_idx = 0;
 
-        // load first DMA_BUFFERS into memory
-        for i in 0..DMA_BUFFERS {
-            self.nvme.read(&mut self.dma_blocks[i], i as u64).unwrap();
+
+        //assert!(task.size > 4*CHUNK_SIZE/8, "Task size too small for DMA classification");
+        // Load first HugePage
+        for i in 0..CHUNKS_PER_HUGE_PAGE {
+            self.qpair.submit_io(&mut self.dma_blocks[0].slice(i*CHUNK_SIZE..(i+1)*CHUNK_SIZE), (i*LBA_PER_CHUNK) as u64, false);
         }
 
+        // DEBUG only
+        //self.qpair.complete_io(CHUNKS_PER_HUGE_PAGE);
+        // print hugepage
+        //println!("Hugepage 0: {:?}", u8_to_u64_slice(&mut self.dma_blocks[0][..CHUNKS_PER_HUGE_PAGE*CHUNK_SIZE]));
+
+
+        let mut cur_hugepage = 0;
+        let mut cur_chunk = 0;
         for i in 0..task.size {
-            let idx = i % BLOCKSIZE;
-            let cur_lba = calculate_lba(i);
 
-            let element = u8_to_u64(&(&self.dma_blocks[cur_lba])[idx*8..idx*8+8]);
+            // update current indices
+            let idx = i % (ELEMENTS_PER_CHUNK*CHUNKS_PER_HUGE_PAGE);
 
+            if i % ELEMENTS_PER_CHUNK == 0 {
+                self.qpair.complete_io(1);
+                if i != 0 {
+                    cur_chunk = (cur_chunk + 1) % CHUNKS_PER_HUGE_PAGE;
+                    if i%ELEMENTS_PER_HUGE_PAGE == 0{
+                        cur_hugepage += 1;
+                    }
+                }
+                // Load next chunk
+                self.qpair.submit_io(&mut self.dma_blocks[(cur_hugepage+1)%HUGE_PAGES].slice(cur_chunk*CHUNK_SIZE..(cur_chunk+1)*CHUNK_SIZE), (((cur_hugepage+1)*CHUNKS_PER_HUGE_PAGE*LBA_PER_CHUNK)+cur_chunk*LBA_PER_CHUNK) as u64, false);
+                println!("Current Hugepage: {}, Current Chunk: {}, Loading LBA {} to hugepage {}, chunk {}", cur_hugepage, cur_chunk, ((cur_hugepage+1)*CHUNKS_PER_HUGE_PAGE*LBA_PER_CHUNK)+cur_chunk*LBA_PER_CHUNK, (cur_hugepage+1)%HUGE_PAGES, cur_chunk);
+            }
+
+            let element = u8_to_u64(&(&self.dma_blocks[cur_hugepage%HUGE_PAGES])[idx*8..idx*8+8]);
 
             let block_idx = find_bucket_ips2ra(element, task.level);
             *self.element_counts.get_unchecked_mut(block_idx) += 1;
-
-            //println!("i = {i}, LBA = {cur_lba}, idx = {idx}, element = {element} -> Bucket {block_idx}");
+            println!("i = {}, idx = {}, cur_hugepage = {}, cur_chunk = {}, element = {}, bucket = {}", i, idx, cur_hugepage, cur_chunk, element, block_idx);
 
             *self.blocks[block_idx].get_unchecked_mut(self.block_counts[block_idx]) = element;
             *self.block_counts.get_unchecked_mut(block_idx) += 1;
 
             if *self.block_counts.get_unchecked(block_idx) == BLOCKSIZE {
                 println!("Block {block_idx} full, writing to disk: {:?}", self.blocks[block_idx]);
-                let target_slice = &mut self.dma_blocks[lba%DMA_BUFFERS][..BLOCKSIZE*8];
+                let target_slice = &mut self.dma_blocks[write_hugepage % HUGE_PAGES][write_chunk*CHUNK_SIZE..(write_chunk+1)*CHUNK_SIZE];
+
+                // TODO: case BLOCKSIZE != CHUNK SIZE
                 target_slice.copy_from_slice(u64_to_u8_slice(&mut self.blocks[block_idx]));
 
                 write_idx+=BLOCKSIZE;
                 *self.block_counts.get_unchecked_mut(block_idx) = 0;
 
+                // write to disk if chunk is full
+                if write_idx % ELEMENTS_PER_CHUNK == 0 {
+                    let wi = write_hugepage%HUGE_PAGES;
+                    println!("Writing hugepage {}, chunk {} to LBA {}", wi, write_chunk, write_hugepage*CHUNKS_PER_HUGE_PAGE*LBA_PER_CHUNK+write_chunk*LBA_PER_CHUNK);
+                    self.qpair.submit_io(&mut self.dma_blocks[wi].slice(write_chunk*CHUNK_SIZE..(write_chunk+1)*CHUNK_SIZE), ((write_hugepage*CHUNKS_PER_HUGE_PAGE*LBA_PER_CHUNK)+write_chunk*LBA_PER_CHUNK) as u64, true);
+                    write_chunk = (write_chunk + 1) % CHUNKS_PER_HUGE_PAGE;
+                    if write_chunk == 0 {
+                        write_hugepage +=1;
+                    }
 
-                //write lba back to disk
-                self.nvme.write(&self.dma_blocks[lba%DMA_BUFFERS], lba as u64).unwrap();
-
-                // read next lba from behind:
-                if (lba+DMA_BUFFERS-1)*BLOCKSIZE < task.size {
-                    self.nvme.read(&mut self.dma_blocks[lba%DMA_BUFFERS], (lba+DMA_BUFFERS) as u64).unwrap();
+                    self.qpair.complete_io(1);
                 }
-                lba += 1;
+
             }
         }
 
+        // check for unwritten chunk
+        if write_idx % ELEMENTS_PER_CHUNK != 0 {
+            print!("Final writing hugepage {}, chunk {} to LBA {}", write_hugepage, write_chunk, write_hugepage*CHUNKS_PER_HUGE_PAGE*LBA_PER_CHUNK+write_chunk*LBA_PER_CHUNK);
+            self.qpair.submit_io(&mut self.dma_blocks[write_hugepage%HUGE_PAGES].slice(write_chunk*CHUNK_SIZE..(write_chunk+1)*CHUNK_SIZE), ((write_hugepage*CHUNKS_PER_HUGE_PAGE*LBA_PER_CHUNK)+cur_chunk*LBA_PER_CHUNK) as u64, true);
+            self.qpair.complete_io(1);
+        }
+
+        self.qpair.complete_io(CHUNKS_PER_HUGE_PAGE);
         self.classified_elements = write_idx;
     }
 }
@@ -93,9 +131,12 @@ pub fn find_bucket_ips2ra(input: u64, level: usize) -> usize {
     ((input >> start) & mask) as usize
 }
 
-fn calculate_lba(input: usize) -> usize {
-    let res = input / (LBA_SIZE / 64);
-    res % DMA_BUFFERS
+pub fn calculate_hugepage_chunk(input: usize) -> (usize, usize) {
+    let elements_per_hugepage = HUGE_PAGE_SIZE / 8;
+    let hugepage = input / elements_per_hugepage;
+    let chunk = (input % elements_per_hugepage) / (CHUNK_SIZE/8);
+
+    (hugepage, chunk)
 }
 
 

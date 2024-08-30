@@ -10,6 +10,8 @@ use std::io;
 use std::time::Instant;
 use rand::seq::index::sample;
 use std::error::Error;
+use vroom::memory::{Dma, DmaSlice};
+use vroom::QUEUE_LENGTH;
 
 mod sampling;
 mod base_case;
@@ -25,6 +27,8 @@ mod conversion;
 mod setup;
 
 use crate::base_case::insertion_sort;
+use crate::classification::calculate_hugepage_chunk;
+use crate::config::{HUGE_PAGES, HUGE_PAGE_SIZE};
 use crate::conversion::{u64_to_u8_slice, u8_to_u64, u8_to_u64_slice};
 use crate::setup::{clear, setup_array};
 use crate::sort::sort;
@@ -42,53 +46,47 @@ fn main() -> Result<(), Box<dyn Error>>{
         .init();
 
     let mut nvme = vroom::init("0000:00:04.0")?;
+    let mut qpair = nvme.create_io_queue_pair(QUEUE_LENGTH)?;
+    let mut buffer = Dma::allocate(HUGE_PAGE_SIZE).unwrap();
+    const n: usize = 4096;
 
-    let length = 4097;
+    let mut data: Vec<u64> = (0..n as u64).collect();
+    let mut rng = StdRng::seed_from_u64(1357);
 
-    let mut arr: Vec<u64> = (0..length).rev().collect();
-    let mut rng = StdRng::seed_from_u64(12345);
-    arr.shuffle(&mut rng);
+    data.shuffle(&mut rng);
 
-    clear(10000, &mut nvme);
-    setup_array(&mut arr, &mut nvme);
+    clear(2150, &mut qpair);
+    setup_array(&mut data, &mut qpair, &mut buffer);
 
+    //let mut input = String::new();
+    //io::stdin().read_line(&mut input).expect("Failed to read input");
+
+
+    let mut sampleTask = Task::new(&mut data, 0);
+    sampleTask.sample();
     let mut sorter1 = IPS2RaSorter::new_sequential();
-    let mut sorter2 = IPS2RaSorterDMA::new_sequential(nvme);
+    let mut sorter2 = IPS2RaSorterDMA::new_sequential(qpair);
 
-    let mut task1 = Task::new(&mut arr, 0);
-    task1.sample();
-
-
-
-    let mut task2 = DMATask::new(0, 0, length as usize, task1.level);
-
-    let mut input = String::new();
-    io::stdin().read_line(&mut input).unwrap();
-
+    let mut DMATask = DMATask::new(0, 0, n, sampleTask.level);
     unsafe {
-        sorter1.classify(&mut task1);
-        sorter2.classify(&mut task2);
+        sorter1.classify(&mut sampleTask);
+        sorter2.classify(&mut DMATask);
     }
 
-    println!("\n\n\n{} of {} elements classified, Array after classification: {:?}", sorter1.classified_elements, length, task1.arr);
-    println!("-------------------------------------------------");
+    println!("Sequential sorter classified {} elements", sorter1.classified_elements);
+    println!("Sequential DMA sorter classified {} elements", sorter2.classified_elements);
+
+    println!("\nArray after sequential classification: {:?}", sampleTask.arr);
 
 
+    let mut buffer_read: Dma<u8> = Dma::allocate(HUGE_PAGE_SIZE*8).unwrap();
+    nvme.read(&buffer_read.slice(0..HUGE_PAGE_SIZE*8), 0)?;
+    let read_data = u8_to_u64_slice(&mut buffer_read[0..n*8]);
 
-    // read the array from disk into one big array
-    let mut tmp = [0; 4097*8];
-    let mut nvme = vroom::init("0000:00:04.0")?;
-    for i in 0..64 {
-        println!("Reading block {}", i);
-        let mut target_slice = &mut tmp[i*512..(i+1)*512];
-        nvme.read_copied(&mut target_slice, i as u64)?;
-    }
-    println!("\n\n\n{} of {} elements classified, Array after classification: {:?}", sorter2.classified_elements, length, u8_to_u64_slice(&mut tmp));
+    println!("\nArray after dma classification: {:?}", read_data);
 
-
-    println!("{:?}\n", sorter1);
-    println!("{:?}\n", sorter2);
-
+    assert_eq!(sorter1.classified_elements, sorter2.classified_elements, "Classified elements do not match");
+    assert_eq!(sampleTask.arr[..sorter1.classified_elements], read_data[..sorter1.classified_elements], "Classified arrays do not match");
 
     println!("Done");
 

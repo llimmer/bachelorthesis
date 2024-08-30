@@ -1,8 +1,8 @@
 use std::fmt;
 use std::fmt::Display;
 use vroom::memory::Dma;
-use vroom::NvmeDevice;
-use crate::config::{K, BLOCKSIZE, DMA_BUFFERS, LBA_SIZE};
+use vroom::{NvmeQueuePair};
+use crate::config::{K, BLOCKSIZE, HUGE_PAGES, HUGE_PAGE_SIZE};
 pub struct Task<'a> {
     pub arr: &'a mut [u64],
     pub level: usize,
@@ -140,17 +140,17 @@ pub struct IPS2RaSorterDMA {
     pub overflow_buffer: Vec<u64>,
 
     // DMA:
-    pub nvme: NvmeDevice,
+    pub qpair: NvmeQueuePair,
     pub dma_blocks: Vec<Dma<u8>>,
 
     pub parallel: bool,
 }
 
 impl IPS2RaSorterDMA {
-    pub fn new(nvme: NvmeDevice, parallel: bool) -> Box<Self> {
+    pub fn new(qpair: NvmeQueuePair, parallel: bool) -> Box<Self> {
         let mut dmas: Vec<Dma<u8>> = vec![];
-        for _ in 0..DMA_BUFFERS {
-            dmas.push(Dma::allocate(LBA_SIZE).unwrap());
+        for _ in 0..HUGE_PAGES {
+            dmas.push(Dma::allocate(HUGE_PAGE_SIZE).unwrap());
         }
 
         Box::new( Self {
@@ -163,18 +163,18 @@ impl IPS2RaSorterDMA {
             element_counts: [0; K],
             overflow: false,
             overflow_buffer: Vec::new(),
-            nvme,
+            qpair,
             dma_blocks: dmas,
             parallel,
         })
     }
 
-    pub fn new_sequential(nvme_device: NvmeDevice) -> Box<Self> {
-        Self::new(nvme_device, false)
+    pub fn new_sequential(qpair: NvmeQueuePair) -> Box<Self> {
+        Self::new(qpair, false)
     }
 
-    pub fn new_parallel(nvme_device: NvmeDevice) -> Box<Self> {
-        Self::new(nvme_device, true)
+    pub fn new_parallel(qpair: NvmeQueuePair) -> Box<Self> {
+        Self::new(qpair, true)
     }
 
     pub fn clear(&mut self) {
