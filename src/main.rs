@@ -27,9 +27,9 @@ mod conversion;
 mod setup;
 
 use crate::base_case::insertion_sort;
-use crate::classification::calculate_hugepage_chunk;
 use crate::config::{HUGE_PAGES, HUGE_PAGE_SIZE};
 use crate::conversion::{u64_to_u8_slice, u8_to_u64, u8_to_u64_slice};
+use crate::permutation::calculate_hugepage_chunk_block;
 use crate::setup::{clear, setup_array};
 use crate::sort::sort;
 use crate::sorter::{DMATask, IPS2RaSorter, IPS2RaSorterDMA, Task};
@@ -47,7 +47,7 @@ fn main() -> Result<(), Box<dyn Error>>{
 
     let mut nvme = vroom::init("0000:00:04.0")?;
     let mut qpair = nvme.create_io_queue_pair(QUEUE_LENGTH)?;
-    let mut buffer = Dma::allocate(HUGE_PAGE_SIZE).unwrap();
+    let mut buffer: Dma<u8> = Dma::allocate(HUGE_PAGE_SIZE).unwrap();
     const n: usize = 4096;
 
     let mut data: Vec<u64> = (0..n as u64).collect();
@@ -73,23 +73,36 @@ fn main() -> Result<(), Box<dyn Error>>{
         sorter2.classify(&mut DMATask);
     }
 
-    println!("Sequential sorter classified {} elements", sorter1.classified_elements);
-    println!("Sequential DMA sorter classified {} elements", sorter2.classified_elements);
+    //println!("Sequential sorter classified {} elements", sorter1.classified_elements);
+    //println!("Sequential DMA sorter classified {} elements", sorter2.classified_elements);
 
-    println!("\nArray after sequential classification: {:?}", sampleTask.arr);
+    //println!("\nArray after sequential classification: {:?}", sampleTask.arr);
 
+    //println!("\nArray after dma classification: {:?}", read_data);
+
+    //assert_eq!(sorter1.classified_elements, sorter2.classified_elements, "Classified elements do not match");
+    //assert_eq!(sampleTask.arr[..sorter1.classified_elements], read_data[..sorter1.classified_elements], "Classified arrays do not match");
+
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).expect("Failed to read input");
+
+    sorter1.permutate_blocks(&mut sampleTask);
+    sorter2.permutate_blocks(&mut DMATask);
 
     let mut buffer_read: Dma<u8> = Dma::allocate(HUGE_PAGE_SIZE*8).unwrap();
     nvme.read(&buffer_read.slice(0..HUGE_PAGE_SIZE*8), 0)?;
     let read_data = u8_to_u64_slice(&mut buffer_read[0..n*8]);
 
-    println!("\nArray after dma classification: {:?}", read_data);
+    println!("\nArray after sequential permutating: {:?}", sampleTask.arr);
+    println!("\nArray after dma permutating: {:?}", read_data);
 
-    assert_eq!(sorter1.classified_elements, sorter2.classified_elements, "Classified elements do not match");
-    assert_eq!(sampleTask.arr[..sorter1.classified_elements], read_data[..sorter1.classified_elements], "Classified arrays do not match");
+    assert_eq!(sampleTask.arr, read_data, "Permutated arrays do not match");
+
+
+
 
     println!("Done");
-
     Ok(())
 }
 

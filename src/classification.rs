@@ -1,3 +1,4 @@
+use log::{debug, info};
 use vroom::memory::DmaSlice;
 use crate::config::{K, BLOCKSIZE, HUGE_PAGES, HUGE_PAGE_SIZE, CHUNKS_PER_HUGE_PAGE, CHUNK_SIZE, LBA_PER_CHUNK, ELEMENTS_PER_CHUNK, ELEMENTS_PER_HUGE_PAGE};
 use crate::conversion::{u64_to_u8_slice, u8_to_u64};
@@ -12,14 +13,14 @@ impl IPS2RaSorter {
             let block_idx = find_bucket_ips2ra(*element, task.level);
             *self.element_counts.get_unchecked_mut(block_idx) += 1;
 
-            println!("i = {i} element = {element} -> Bucket {block_idx}");
+            info!("i = {i} element = {element} -> Bucket {block_idx}");
 
             // TODO: paper suggests to check if full first, then insert. Maybe change.
             *self.blocks[block_idx].get_unchecked_mut(self.block_counts[block_idx]) = *element;
             *self.block_counts.get_unchecked_mut(block_idx) += 1;
 
             if *self.block_counts.get_unchecked(block_idx) == BLOCKSIZE {
-                println!("Block {block_idx} full, writing to disk: {:?}", self.blocks[block_idx]);
+                info!("Block {block_idx} full, writing to disk: {:?}", self.blocks[block_idx]);
                 let target_slice = &mut task.arr[write_idx..write_idx + BLOCKSIZE];
                 target_slice.copy_from_slice(&self.blocks[block_idx]);
                 write_idx += BLOCKSIZE;
@@ -73,20 +74,20 @@ impl IPS2RaSorterDMA {
                 }
                 // Load next chunk
                 self.qpair.submit_io(&mut self.dma_blocks[(cur_hugepage+1)%HUGE_PAGES].slice(cur_chunk*CHUNK_SIZE..(cur_chunk+1)*CHUNK_SIZE), (((cur_hugepage+1)*CHUNKS_PER_HUGE_PAGE*LBA_PER_CHUNK)+cur_chunk*LBA_PER_CHUNK) as u64, false);
-                println!("Current Hugepage: {}, Current Chunk: {}, Loading LBA {} to hugepage {}, chunk {}", cur_hugepage, cur_chunk, ((cur_hugepage+1)*CHUNKS_PER_HUGE_PAGE*LBA_PER_CHUNK)+cur_chunk*LBA_PER_CHUNK, (cur_hugepage+1)%HUGE_PAGES, cur_chunk);
+                info!("Current Hugepage: {}, Current Chunk: {}, Loading LBA {} to hugepage {}, chunk {}", cur_hugepage, cur_chunk, ((cur_hugepage+1)*CHUNKS_PER_HUGE_PAGE*LBA_PER_CHUNK)+cur_chunk*LBA_PER_CHUNK, (cur_hugepage+1)%HUGE_PAGES, cur_chunk);
             }
 
             let element = u8_to_u64(&(&self.dma_blocks[cur_hugepage%HUGE_PAGES])[idx*8..idx*8+8]);
 
             let block_idx = find_bucket_ips2ra(element, task.level);
             *self.element_counts.get_unchecked_mut(block_idx) += 1;
-            println!("i = {}, idx = {}, cur_hugepage = {}, cur_chunk = {}, element = {}, bucket = {}", i, idx, cur_hugepage, cur_chunk, element, block_idx);
+            info!("i = {}, idx = {}, cur_hugepage = {}, cur_chunk = {}, element = {}, bucket = {}", i, idx, cur_hugepage, cur_chunk, element, block_idx);
 
             *self.blocks[block_idx].get_unchecked_mut(self.block_counts[block_idx]) = element;
             *self.block_counts.get_unchecked_mut(block_idx) += 1;
 
             if *self.block_counts.get_unchecked(block_idx) == BLOCKSIZE {
-                println!("Block {block_idx} full, writing to disk: {:?}", self.blocks[block_idx]);
+                info!("Block {block_idx} full, writing to disk: {:?}", self.blocks[block_idx]);
                 let target_slice = &mut self.dma_blocks[write_hugepage % HUGE_PAGES][write_chunk*CHUNK_SIZE..(write_chunk+1)*CHUNK_SIZE];
 
                 // TODO: case BLOCKSIZE != CHUNK SIZE
@@ -98,7 +99,7 @@ impl IPS2RaSorterDMA {
                 // write to disk if chunk is full
                 if write_idx % ELEMENTS_PER_CHUNK == 0 {
                     let wi = write_hugepage%HUGE_PAGES;
-                    println!("Writing hugepage {}, chunk {} to LBA {}", wi, write_chunk, write_hugepage*CHUNKS_PER_HUGE_PAGE*LBA_PER_CHUNK+write_chunk*LBA_PER_CHUNK);
+                    info!("Writing hugepage {}, chunk {} to LBA {}", wi, write_chunk, write_hugepage*CHUNKS_PER_HUGE_PAGE*LBA_PER_CHUNK+write_chunk*LBA_PER_CHUNK);
                     self.qpair.submit_io(&mut self.dma_blocks[wi].slice(write_chunk*CHUNK_SIZE..(write_chunk+1)*CHUNK_SIZE), ((write_hugepage*CHUNKS_PER_HUGE_PAGE*LBA_PER_CHUNK)+write_chunk*LBA_PER_CHUNK) as u64, true);
                     write_chunk = (write_chunk + 1) % CHUNKS_PER_HUGE_PAGE;
                     if write_chunk == 0 {
@@ -113,7 +114,7 @@ impl IPS2RaSorterDMA {
 
         // check for unwritten chunk
         if write_idx % ELEMENTS_PER_CHUNK != 0 {
-            print!("Final writing hugepage {}, chunk {} to LBA {}", write_hugepage, write_chunk, write_hugepage*CHUNKS_PER_HUGE_PAGE*LBA_PER_CHUNK+write_chunk*LBA_PER_CHUNK);
+            info!("Final writing hugepage {}, chunk {} to LBA {}", write_hugepage, write_chunk, write_hugepage*CHUNKS_PER_HUGE_PAGE*LBA_PER_CHUNK+write_chunk*LBA_PER_CHUNK);
             self.qpair.submit_io(&mut self.dma_blocks[write_hugepage%HUGE_PAGES].slice(write_chunk*CHUNK_SIZE..(write_chunk+1)*CHUNK_SIZE), ((write_hugepage*CHUNKS_PER_HUGE_PAGE*LBA_PER_CHUNK)+cur_chunk*LBA_PER_CHUNK) as u64, true);
             self.qpair.complete_io(1);
         }
@@ -131,12 +132,6 @@ pub fn find_bucket_ips2ra(input: u64, level: usize) -> usize {
     ((input >> start) & mask) as usize
 }
 
-pub fn calculate_hugepage_chunk(input: usize) -> (usize, usize) {
-    let elements_per_hugepage = HUGE_PAGE_SIZE / 8;
-    let hugepage = input / elements_per_hugepage;
-    let chunk = (input % elements_per_hugepage) / (CHUNK_SIZE/8);
 
-    (hugepage, chunk)
-}
 
 
