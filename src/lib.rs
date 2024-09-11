@@ -10,6 +10,8 @@ mod sampling;
 mod sorter;
 mod sequential;
 mod parallel;
+mod conversion;
+mod setup;
 
 pub use sort::sort;
 pub use base_case::insertion_sort;
