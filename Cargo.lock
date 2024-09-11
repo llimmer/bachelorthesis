@@ -634,7 +634,6 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 [[package]]
 name = "vroom"
 version = "0.1.0"
-source = "git+https://github.com/bootreer/vroom.git?branch=main#16e9e06010e0d5484b8bbb160812b0557502cee6"
 dependencies = [
  "byteorder",
  "lazy_static",

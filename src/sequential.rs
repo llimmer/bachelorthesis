@@ -38,8 +38,10 @@ impl IPS2RaSorter {
                 continue;
             }
             let mut new_task = Task::new(&mut task.arr[start as usize..sum as usize], task.level+1);
+            info!("Added new task from {start} to {sum}, level: {}", task.level+1);
             self.clear();
             self.sort_sequential(&mut new_task);
         }
+
     }
 }
