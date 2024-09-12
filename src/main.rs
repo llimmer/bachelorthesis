@@ -31,7 +31,7 @@ use crate::config::{HUGE_PAGES, HUGE_PAGE_SIZE};
 use crate::conversion::{u64_to_u8_slice, u8_to_u64, u8_to_u64_slice};
 use crate::permutation::calculate_hugepage_chunk_block;
 use crate::setup::{clear, setup_array};
-use crate::sort::{sort, sort_dma};
+use crate::sort::{sort, sort_dma, sort_parallel};
 use crate::sorter::{DMATask, IPS2RaSorter, Task};
 
 fn verify_sorted(arr: &Vec<u64>) {
@@ -46,6 +46,30 @@ fn main() -> Result<(), Box<dyn Error>>{
         .init();
 
     sort_dma("0000:00:04.0", 0, false)?;
+
+    /*let mut data: Vec<u64> = (1..=300_000_000u64).collect();
+    let mut rng = StdRng::seed_from_u64(12345);
+    data.shuffle(&mut rng);
+    let mut data2 = data.clone();
+    let mut data3 = data.clone();
+
+    // Sequential
+    let start = Instant::now();
+    sort(&mut data);
+    let duration = start.elapsed();
+    println!("Sequential: {:?}", duration);
+
+    // Parallel
+    let start = Instant::now();
+    sort_parallel(&mut data2);
+    let duration = start.elapsed();
+    println!("Parallel: {:?}", duration);
+
+    // Quicksort
+    let start = Instant::now();
+    data3.sort_unstable();
+    let duration = start.elapsed();
+    println!("Quicksort: {:?}", duration);*/
 
     Ok(())
 }

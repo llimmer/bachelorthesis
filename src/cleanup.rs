@@ -24,34 +24,34 @@ impl IPS2RaSorter {
                 let mut to_write_front = to_write - tailsize as usize;
                 if to_write_front < BLOCKSIZE {
                     // fill front
-                    let target_slice = &mut task.data[dst..dst + to_write_front];
+                    let target_slice = &mut task.arr[dst..dst + to_write_front];
                     target_slice.copy_from_slice(&self.overflow_buffer[..to_write_front]);
                     dst = sum as usize - tailsize;
 
                     // fill back
                     let overflow_back = BLOCKSIZE - to_write_front;
-                    let target_slice = &mut task.data[dst..dst + overflow_back];
+                    let target_slice = &mut task.arr[dst..dst + overflow_back];
                     target_slice.copy_from_slice(&self.overflow_buffer[to_write_front..]);
                     dst += overflow_back;
                     tailsize -= overflow_back;
 
                     // fill back with blocks
-                    let target_slice = &mut task.data[dst..dst + tailsize];
+                    let target_slice = &mut task.arr[dst..dst + tailsize];
                     target_slice.copy_from_slice(&self.blocks[i][0..self.block_counts[i]]);
                 } else { // case overflowbuffer <= frontspace
                     // fill front
-                    let target_slice = &mut task.data[dst..dst + BLOCKSIZE];
+                    let target_slice = &mut task.arr[dst..dst + BLOCKSIZE];
                     target_slice.copy_from_slice(&self.overflow_buffer[..]);
                     dst += BLOCKSIZE;
                     to_write_front -= BLOCKSIZE;
 
                     // fill front with blocks
-                    let target_slice = &mut task.data[dst..dst + to_write_front];
+                    let target_slice = &mut task.arr[dst..dst + to_write_front];
                     target_slice.copy_from_slice(&self.blocks[i][..to_write_front]);
                     dst = sum as usize - tailsize;
 
                     // fill back with blocks
-                    let target_slice = &mut task.data[dst..dst + tailsize];
+                    let target_slice = &mut task.arr[dst..dst + tailsize];
                     target_slice.copy_from_slice(&self.blocks[i][to_write_front..]);
                 }
                 continue;
@@ -59,7 +59,7 @@ impl IPS2RaSorter {
 
             let mut to_write: usize = 0;
 
-            if write_ptr <= self.boundaries[i] as i64 || write_ptr as usize > task.data.len() {
+            if write_ptr <= self.boundaries[i] as i64 || write_ptr as usize > task.arr.len() {
                 // do nothing
             }
             // write ptr > sum => (write ptr-sum) elements overwrite to right
@@ -68,15 +68,15 @@ impl IPS2RaSorter {
                 // read elements and write to correct position
                 // TODO: check if possible with slice copy
                 for j in 0..((write_ptr as u64 - sum) as usize) {
-                    let element = task.data[(sum as usize + j) as usize];
-                    task.data[dst] = element;
+                    let element = task.arr[(sum as usize + j) as usize];
+                    task.arr[dst] = element;
                     dst += 1;
                 }
             } else {
                 // fill the back
                 to_write = sum as usize - write_ptr as usize;
                 if to_write > 0 {
-                    let target_slice = &mut task.data[write_ptr as usize..sum as usize];
+                    let target_slice = &mut task.arr[write_ptr as usize..sum as usize];
                     target_slice.copy_from_slice(&self.blocks[i][..to_write]);
                 }
             }
@@ -84,7 +84,7 @@ impl IPS2RaSorter {
             // fill the front with remaining elements from blocks buffer
             let remaining = self.block_counts[i] - to_write;
             if remaining > 0 {
-                let target_slice = &mut task.data[dst..dst + remaining];
+                let target_slice = &mut task.arr[dst..dst + remaining];
                 target_slice.copy_from_slice(&self.blocks[i][to_write..self.block_counts[i]]);
             }
         }

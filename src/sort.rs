@@ -1,21 +1,24 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize};
-use std::thread;
+use std::{io, thread};
 use log::{debug, error, info};
-use crate::config::{BLOCKSIZE, K, NUM_THREADS, THRESHOLD};
+use crate::config::{BLOCKSIZE, CHUNKS_PER_HUGE_PAGE, CHUNK_SIZE, HUGE_PAGE_SIZE, K, LBA_PER_CHUNK, NUM_THREADS, THRESHOLD};
 use crate::parallel::process_task;
 use crate::sorter::{IPS2RaSorter, Task};
-use crate::parallel::sort_parallel;
 use crate::setup::{clear, setup_array};
 use std::error::Error;
+use rand::prelude::{SliceRandom, StdRng};
+use rand::SeedableRng;
+use vroom::memory::{Dma, DmaSlice};
+use vroom::{NvmeQueuePair, QUEUE_LENGTH};
 use crate::conversion::u8_to_u64_slice;
 
 pub fn sort(arr: &mut [u64]) {
     let mut s = IPS2RaSorter::new_sequential();
     let mut task = Task::new(arr, 0);
     task.sample();
-    debug!("Task after sampling: {:?}", task.data);
+    debug!("Task after sampling: {:?}", task.arr);
     info!("Level: {:?}", task.level);
     s.sort_sequential(&mut task);
 }

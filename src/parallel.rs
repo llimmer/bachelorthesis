@@ -8,12 +8,12 @@ use crate::base_case::insertion_sort;
 use crate::sorter::{IPS2RaSorter, Task};
 
 thread_local! {
-    static SORTER: RefCell<IPS2RaSorter> = RefCell::new(IPS2RaSorter::new_parallel());
+    static SORTER: RefCell<IPS2RaSorter> = RefCell::new(*IPS2RaSorter::new_parallel());
 }
 
 pub fn process_task(task: &mut Task) {
     if task.is_base_case() {
-        insertion_sort(task.data);
+        insertion_sort(task.arr);
     } else {
         let element_counts = SORTER.with(
             |sorter| unsafe {
@@ -28,13 +28,11 @@ pub fn process_task(task: &mut Task) {
 
         scope(|s| {
             for mut task in task.generate_subtasks(&element_counts){
-                debug!("Thread {} spawning subtasks {:?}", rayon::current_thread_index().unwrap(), task.data);
+                debug!("Thread {} spawning subtasks {:?}", rayon::current_thread_index().unwrap(), task.arr);
                 s.spawn(move |_| {
                     process_task(&mut task);
                 });
             }
-
-
         });
     }
 }

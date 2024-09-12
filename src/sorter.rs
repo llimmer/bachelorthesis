@@ -18,6 +18,23 @@ impl Task<'_> {
     pub fn is_base_case(&self) -> bool {
         self.arr.len() <= THRESHOLD
     }
+
+    pub fn generate_subtasks(&mut self, element_counts: &[u64; K]) -> Vec<Task> {
+        let mut res = Vec::with_capacity(K);
+        let (first, mut rest) = self.arr.split_at_mut(element_counts[0] as usize);
+        if first.len() > 1 {
+            res.push(Task::new(first, self.level + 1));
+        }
+        for i in 1..K {
+            let (left, right) = rest.split_at_mut(element_counts[i] as usize);
+            rest = right;
+            if left.len() > 1 {
+                res.push(Task::new(left, self.level + 1));
+            }
+
+        }
+        res
+    }
 }
 
 pub struct DMATask<> {

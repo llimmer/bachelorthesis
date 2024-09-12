@@ -1,9 +1,9 @@
-pub fn insertion_sort(arr: &mut [u64]) {
+pub fn insertion_sort2(arr: &mut [u64]) {
     // TODO: enhance performance
     arr.sort_unstable();
 }
 
-pub fn insertion_sort2(arr: &mut [u64]) {
+pub fn insertion_sort(arr: &mut [u64]) {
     for j in 1..arr.len() {
         let mut i: usize = 0;
         while arr[j] > arr[i] {
