@@ -80,9 +80,10 @@ dependencies = [
  "crossbeam-channel",
  "env_logger",
  "log",
- "rand",
+ "rand 0.9.0-alpha.1",
  "rayon",
  "thread_local",
+ "vroom",
 ]
 
 [[package]]
