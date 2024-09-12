@@ -2,7 +2,7 @@ use std::fmt;
 use std::fmt::Display;
 use vroom::memory::Dma;
 use vroom::{NvmeQueuePair};
-use crate::config::{K, BLOCKSIZE, HUGE_PAGES, HUGE_PAGE_SIZE};
+use crate::config::{K, BLOCKSIZE, HUGE_PAGES, HUGE_PAGE_SIZE, THRESHOLD};
 pub struct Task<'a> {
     pub arr: &'a mut [u64],
     pub level: usize,
@@ -14,6 +14,9 @@ impl Task<'_> {
             arr,
             level,
         }
+    }
+    pub fn is_base_case(&self) -> bool {
+        self.arr.len() <= THRESHOLD
     }
 }
 

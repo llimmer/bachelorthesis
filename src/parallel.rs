@@ -8,12 +8,12 @@ use crate::base_case::insertion_sort;
 use crate::sorter::{IPS2RaSorter, Task};
 
 thread_local! {
-    static SORTER: RefCell<IPS2RaSorter> = RefCell::new(*IPS2RaSorter::new_parallel());
+    static SORTER: RefCell<IPS2RaSorter> = RefCell::new(IPS2RaSorter::new_parallel());
 }
 
 pub fn process_task(task: &mut Task) {
     if task.is_base_case() {
-        insertion_sort(task.arr);
+        insertion_sort(task.data);
     } else {
         let element_counts = SORTER.with(
             |sorter| unsafe {

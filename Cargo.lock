@@ -81,6 +81,8 @@ dependencies = [
  "env_logger",
  "log",
  "rand 0.9.0-alpha.1",
+ "rayon",
+ "thread_local",
  "vroom",
 ]
 
@@ -610,6 +612,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "thread_local"
+version = "1.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b9ef9bad013ada3808854ceac7b46812a6465ba368859a37e2100283d2d719c"
+dependencies = [
+ "cfg-if",
+ "once_cell",
+]
+
+[[package]]
 name = "tinytemplate"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -634,6 +646,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 [[package]]
 name = "vroom"
 version = "0.1.0"
+source = "git+https://github.com/bootreer/vroom.git?branch=main#16e9e06010e0d5484b8bbb160812b0557502cee6"
 dependencies = [
  "byteorder",
  "lazy_static",

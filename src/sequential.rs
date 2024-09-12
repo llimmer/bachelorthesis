@@ -42,6 +42,5 @@ impl IPS2RaSorter {
             self.clear();
             self.sort_sequential(&mut new_task);
         }
-
     }
 }
