@@ -111,17 +111,17 @@ pub fn read_write_hugepage(qpair: &mut NvmeQueuePair, offset: usize, segment: &m
     let max_chunks_per_queue = QUEUE_LENGTH/8;
     let chunks_per_segment = HUGE_PAGE_SIZE/CHUNK_SIZE;
 
-    println!("Hugepage Size: {}, Max chunks per hugepage: {}, chunks_per_hugepage: {}", HUGE_PAGE_SIZE, max_chunks_per_queue, chunks_per_segment);
+    //println!("Hugepage Size: {}, Max chunks per hugepage: {}, chunks_per_hugepage: {}, offset: {}", HUGE_PAGE_SIZE, max_chunks_per_queue, chunks_per_segment, offset);
     if chunks_per_segment <= max_chunks_per_queue {
         for i in 0..chunks_per_segment {
-            //println!("Requesting lba {} to chunk {}", i*LBA_PER_CHUNK, i);
-            qpair.submit_io(&mut segment.slice(i*CHUNK_SIZE..(i+1)*CHUNK_SIZE), (LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE*offset) as u64 + (i*LBA_PER_CHUNK) as u64, write);
+            let tmp = qpair.submit_io(&mut segment.slice(i*CHUNK_SIZE..(i+1)*CHUNK_SIZE), (LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE*offset) as u64 + (i*LBA_PER_CHUNK) as u64, write);
+            //println!("Requesting lba {} to chunk {}, SQEs: {}", (LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE*offset), i, tmp);
         }
         qpair.complete_io(chunks_per_segment);
     } else {
         // request max_chunks_per_queue chunks
         for i in 0..max_chunks_per_queue {
-            //println!("Requesting lba {} to chunk {}", i*LBA_PER_CHUNK, i);
+            //println!("Requesting lba {} to chunk {}", (LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE*offset), i);
             qpair.submit_io(&mut segment.slice(i*CHUNK_SIZE..(i+1)*CHUNK_SIZE), (LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE*offset) as u64 + (i*LBA_PER_CHUNK) as u64, write);
         }
         //println!("////////////////////////////////////////////");

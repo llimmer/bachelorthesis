@@ -13,6 +13,7 @@ mod sequential;
 mod parallel;
 mod conversion;
 mod setup;
+mod merge;
 
 pub use sort::sort;
 pub use base_case::insertion_sort;
