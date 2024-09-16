@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize};
 use std::{io, thread};
 use log::{debug, error, info};
-use crate::config::{BLOCKSIZE, CHUNKS_PER_HUGE_PAGE, CHUNK_SIZE, HUGE_PAGE_SIZE, K, LBA_PER_CHUNK, NUM_THREADS, THRESHOLD};
+use crate::config::{BLOCKSIZE, CHUNKS_PER_HUGE_PAGE_1G, CHUNK_SIZE, HUGE_PAGE_SIZE_1G, K, LBA_PER_CHUNK, NUM_THREADS, THRESHOLD};
 use crate::parallel::process_task;
 use crate::sorter::{IPS2RaSorter, Task};
 use crate::setup::{clear, setup_array};
@@ -51,11 +51,11 @@ pub fn sort_dma(pci_addr: &str, len: usize, parallel: bool) -> Result<(), Box<dy
 
     // Prepare data: //todo: remove
     println!("Clearing hugepages");
-    clear(CHUNKS_PER_HUGE_PAGE*2+10, &mut qpair);
+    clear(CHUNKS_PER_HUGE_PAGE_1G *2+10, &mut qpair);
     println!("Done");
     let len = 134217728*2+3;
 
-    println!("Number of hugepages to sort: {}", (len+HUGE_PAGE_SIZE/8-1)/(HUGE_PAGE_SIZE/8));
+    println!("Number of hugepages to sort: {}", (len+ HUGE_PAGE_SIZE_1G /8-1)/(HUGE_PAGE_SIZE_1G /8));
 
     println!("Generating data");
     let mut data: Vec<u64> = (1..=len as u64).collect();
@@ -73,18 +73,18 @@ pub fn sort_dma(pci_addr: &str, len: usize, parallel: bool) -> Result<(), Box<dy
 
     if !parallel {
         let mut sorter = IPS2RaSorter::new_sequential();
-        let mut buffer = Dma::allocate(HUGE_PAGE_SIZE)?;
+        let mut buffer = Dma::allocate(HUGE_PAGE_SIZE_1G)?;
         let mut remaining = len;
-        for i in 0..((len+HUGE_PAGE_SIZE/8-1)/(HUGE_PAGE_SIZE/8)){
+        for i in 0..((len+ HUGE_PAGE_SIZE_1G /8-1)/(HUGE_PAGE_SIZE_1G /8)){
             // read hugepage from ssd
             println!("Reading hugepage {i}");
             read_write_hugepage(&mut qpair, i, &mut buffer, false);
             println!("Done");
 
             let u64slice = u8_to_u64_slice(&mut buffer[0..{
-                if remaining > HUGE_PAGE_SIZE/8{
-                    remaining = remaining - HUGE_PAGE_SIZE/8;
-                    HUGE_PAGE_SIZE
+                if remaining > HUGE_PAGE_SIZE_1G /8{
+                    remaining = remaining - HUGE_PAGE_SIZE_1G /8;
+                    HUGE_PAGE_SIZE_1G
                 } else {
                     let res = remaining;
                     remaining = 0;
@@ -109,12 +109,12 @@ pub fn sort_dma(pci_addr: &str, len: usize, parallel: bool) -> Result<(), Box<dy
 
 pub fn read_write_hugepage(qpair: &mut NvmeQueuePair, offset: usize, segment: &mut Dma<u8>, write: bool){
     let max_chunks_per_queue = QUEUE_LENGTH/8;
-    let chunks_per_segment = HUGE_PAGE_SIZE/CHUNK_SIZE;
+    let chunks_per_segment = HUGE_PAGE_SIZE_1G /CHUNK_SIZE;
 
     //println!("Hugepage Size: {}, Max chunks per hugepage: {}, chunks_per_hugepage: {}, offset: {}", HUGE_PAGE_SIZE, max_chunks_per_queue, chunks_per_segment, offset);
     if chunks_per_segment <= max_chunks_per_queue {
         for i in 0..chunks_per_segment {
-            let tmp = qpair.submit_io(&mut segment.slice(i*CHUNK_SIZE..(i+1)*CHUNK_SIZE), (LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE*offset) as u64 + (i*LBA_PER_CHUNK) as u64, write);
+            let tmp = qpair.submit_io(&mut segment.slice(i*CHUNK_SIZE..(i+1)*CHUNK_SIZE), (LBA_PER_CHUNK* CHUNKS_PER_HUGE_PAGE_1G *offset) as u64 + (i*LBA_PER_CHUNK) as u64, write);
             //println!("Requesting lba {} to chunk {}, SQEs: {}", (LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE*offset), i, tmp);
         }
         qpair.complete_io(chunks_per_segment);
@@ -122,12 +122,12 @@ pub fn read_write_hugepage(qpair: &mut NvmeQueuePair, offset: usize, segment: &m
         // request max_chunks_per_queue chunks
         for i in 0..max_chunks_per_queue {
             //println!("Requesting lba {} to chunk {}", (LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE*offset), i);
-            qpair.submit_io(&mut segment.slice(i*CHUNK_SIZE..(i+1)*CHUNK_SIZE), (LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE*offset) as u64 + (i*LBA_PER_CHUNK) as u64, write);
+            qpair.submit_io(&mut segment.slice(i*CHUNK_SIZE..(i+1)*CHUNK_SIZE), (LBA_PER_CHUNK* CHUNKS_PER_HUGE_PAGE_1G *offset) as u64 + (i*LBA_PER_CHUNK) as u64, write);
         }
         //println!("////////////////////////////////////////////");
         for i in max_chunks_per_queue..chunks_per_segment {
             qpair.complete_io(1);
-            qpair.submit_io(&mut segment.slice(i*CHUNK_SIZE..(i+1)*CHUNK_SIZE), (LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE*offset) as u64 + (i*LBA_PER_CHUNK) as u64, write);
+            qpair.submit_io(&mut segment.slice(i*CHUNK_SIZE..(i+1)*CHUNK_SIZE), (LBA_PER_CHUNK* CHUNKS_PER_HUGE_PAGE_1G *offset) as u64 + (i*LBA_PER_CHUNK) as u64, write);
         }
         // wait for remaining chunks
         qpair.complete_io(max_chunks_per_queue);

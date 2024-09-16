@@ -1,4 +1,4 @@
-use crate::config::{ALPHA, K};
+use crate::config::{K};
 use crate::sorter::{IPS2RaSorter, Task};
 
 impl <'a> Task<'_>{

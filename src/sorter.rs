@@ -1,8 +1,8 @@
 use std::fmt;
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 use vroom::memory::Dma;
 use vroom::{NvmeQueuePair};
-use crate::config::{K, BLOCKSIZE, HUGE_PAGES, HUGE_PAGE_SIZE, THRESHOLD};
+use crate::config::{K, BLOCKSIZE, HUGE_PAGES_1G, HUGE_PAGE_SIZE_1G, THRESHOLD};
 pub struct Task<'a> {
     pub arr: &'a mut [u64],
     pub level: usize,
@@ -37,6 +37,8 @@ impl Task<'_> {
     }
 }
 
+
+
 pub struct DMATask<> {
     pub start_lba: usize,
     pub offset: usize,
@@ -57,7 +59,6 @@ impl DMATask {
 
 
 
-#[derive(Debug)]
 pub struct IPS2RaSorter {
     pub block_counts: [usize; K],
     pub element_counts: [u64; K],
@@ -73,6 +74,11 @@ pub struct IPS2RaSorter {
     pub overflow_buffer: Vec<u64>,
 
     pub parallel: bool,
+
+    // DMA
+    pub qpair: Option<NvmeQueuePair>,
+    pub buffers: Option<Vec<Dma<u8>>>,
+
 }
 impl IPS2RaSorter {
     pub fn new_sequential() -> Box<IPS2RaSorter> {
@@ -87,6 +93,8 @@ impl IPS2RaSorter {
             overflow: false,
             overflow_buffer: Vec::new(),
             parallel: false,
+            qpair: None,
+            buffers: None,
         })
     }
 
@@ -114,6 +122,25 @@ impl IPS2RaSorter {
             overflow: false,
             overflow_buffer: Vec::new(),
             parallel: true,
+            qpair: None,
+            buffers: None,
+        })
+    }
+
+    pub fn new_ext_sequential(qpair: NvmeQueuePair, buffers: Vec<Dma<u8>>) -> Box<Self> {
+        Box::new(Self {
+            classified_elements: 0,
+            pointers: [(0, 0); K],
+            boundaries: [0; K + 1],
+            primary_bucket: 0,
+            blocks: [[0; BLOCKSIZE]; K],
+            block_counts: [0; K],
+            element_counts: [0; K],
+            overflow: false,
+            overflow_buffer: Vec::new(),
+            parallel: false,
+            qpair: Some(qpair),
+            buffers: Some(buffers),
         })
     }
 
@@ -141,5 +168,37 @@ impl IPS2RaSorter {
         }
         res.push_str("\x1b[0m");
         res
+    }
+}
+
+impl Debug for IPS2RaSorter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "IPS2RaSorter:\n  \
+            classified_elements: {}\n  \
+            pointers: {:?}\n\
+            boundaries: {:?}\n\
+            primary_bucket: {}\n\
+            blocks: {:?}\n\
+            block_counts: {:?}\n\
+            element_counts: {:?}\n\
+            overflow: {}\n\
+            overflow_buffer: {:?}\n\
+            parallel: {}\n\
+            external: {:?}",
+           self.classified_elements,
+           self.pointers,
+           self.boundaries,
+           self.primary_bucket,
+           self.blocks,
+           self.block_counts,
+           self.element_counts,
+           self.overflow,
+           self.overflow_buffer,
+           self.parallel,
+           { if self.qpair.is_some() {
+                "True"
+           } else {
+                "False"
+           }})
     }
 }
