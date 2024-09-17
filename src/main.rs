@@ -65,22 +65,94 @@ fn main() -> Result<(), Box<dyn Error>>{
     let mut sorter = IPS2RaSorter::new_sequential();
     let mut ext_sorter = IPS2RaSorter::new_ext_sequential(sorter_qpair, buffers_small);
 
-    for i in 0..100000 {
-        let LEN: u64 = 8192+i;//8192+1024;//;
+    let len: usize = 524288/2-12343;
+
+    let mut data: Vec<u64> = (1..=len as u64).collect();
+    let mut rng = StdRng::seed_from_u64(12345);
+    data.shuffle(&mut rng);
+
+    // prepare data on ssd
+    buffer_large[0..(len*8)].copy_from_slice(u64_to_u8_slice(&mut data));
+    read_write_hugepage(&mut qpair, 0, &mut buffer_large, true);
+
+    let mut task = Task::new(&mut data, 0);
+    task.sample();
+    let mut dma_task = DMATask::new(0, 0, len, task.level);
+
+    sorter.classify(&mut task);
+    ext_sorter.classify_ext(&mut dma_task);
+
+    read_write_hugepage(&mut qpair, 0, &mut buffer_large, false);
+    println!("Classified elements: {}, external = {}", sorter.classified_elements, ext_sorter.classified_elements);
+    assert_eq!(sorter.classified_elements, ext_sorter.classified_elements, "Classified elements not equal");
+    assert_eq!(task.arr[0..sorter.classified_elements], u8_to_u64_slice(&mut buffer_large[0..(len*8)])[0..ext_sorter.classified_elements], "Data not classified correctly");
+
+    assert_eq!(task.arr, u8_to_u64_slice(&mut buffer_large[0..(len*8)]), "Data classified correctly but arr[classified_elements..] not equal. Further testing not possible");
+
+    sorter.permutate_blocks(&mut task);
+    ext_sorter.permutate_blocks_ext(&mut dma_task);
+
+    read_write_hugepage(&mut qpair, 0, &mut buffer_large, false);
+    assert_eq!(task.arr, u8_to_u64_slice(&mut buffer_large[0..(len*8)]), "Data not permutated correctly");
+
+    println!("Overflows: {:?}, external = {:?}", sorter.overflow_buffer, ext_sorter.overflow_buffer);
+
+    //println!("Sorter struct before cleanup: {:?}", sorter);
+    println!("External sorter struct before cleanup: {:?}", ext_sorter);
+
+    //println!("Data before cleanup: {:?}", task.arr);
+    println!("External data before cleanup: {:?}", u8_to_u64_slice(&mut buffer_large[0..(len*8)]));
+
+    sorter.cleanup(&mut task);
+    ext_sorter.cleanup_ext(&mut dma_task);
+
+    read_write_hugepage(&mut qpair, 0, &mut buffer_large, false);
+    let res = u8_to_u64_slice(&mut buffer_large[0..(len*8)]);
+
+    //println!("Result: {:?}", task.arr);
+    println!("External Result: {:?}", res);
+    for i in 0..len {
+        if task.arr[i] != res[i] {
+            println!("Difference at i = {}, task = {}, res = {}", i, task.arr[i], res[i]);
+        }
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    /*for i in 0..100000 {
+        let len: u64 = 8192+i;//8192+1024;//;
         println!("i = {}", i);
         sorter.clear();
         ext_sorter.clear();
-        let mut data: Vec<u64> = (1..=LEN).collect();
+        let mut data: Vec<u64> = (1..=len).collect();
         let mut rng = StdRng::seed_from_u64(i);
         data.shuffle(&mut rng);
 
         // write data to ssd
-        buffer_large[0..(LEN * 8) as usize].copy_from_slice(u64_to_u8_slice(&mut data));
+        buffer_large[0..(len * 8) as usize].copy_from_slice(u64_to_u8_slice(&mut data));
         read_write_hugepage(&mut qpair, 0, &mut buffer_large, true);
 
         let mut task = Task::new(&mut data, 0);
         task.sample();
-        let mut dma_task = DMATask::new(0, 0, LEN as usize, task.level);
+        let mut dma_task = DMATask::new(0, 0, len as usize, task.level);
 
         println!("Starting classification");
         sorter.classify(&mut task);
@@ -92,9 +164,9 @@ fn main() -> Result<(), Box<dyn Error>>{
         read_write_hugepage(&mut qpair, 0, &mut buffer_large, false);
 
         println!("Classified elements: {}, external = {}", sorter.classified_elements, ext_sorter.classified_elements);
-        assert_eq!(task.arr, u8_to_u64_slice(&mut buffer_large[0..(LEN * 8) as usize]), "Data not classified correctly");
+        assert_eq!(task.arr, u8_to_u64_slice(&mut buffer_large[0..(len * 8) as usize]), "Data not classified correctly");
         //println!("Data after classification: {:?}", task.arr);
-        //println!("Data after external classification: {:?}", u8_to_u64_slice(&mut buffer_large[0..(LEN*8) as usize]));
+        //println!("Data after external classification: {:?}", u8_to_u64_slice(&mut buffer_large[0..(len*8) as usize]));
 
 
         // permutation
@@ -104,9 +176,9 @@ fn main() -> Result<(), Box<dyn Error>>{
         // read to check if data is permutated correctly
         read_write_hugepage(&mut qpair, 0, &mut buffer_large, false);
 
-        assert_eq!(task.arr, u8_to_u64_slice(&mut buffer_large[0..(LEN * 8) as usize]), "Data not permutated correctly");
+        assert_eq!(task.arr, u8_to_u64_slice(&mut buffer_large[0..(len * 8) as usize]), "Data not permutated correctly");
         println!("Overflows: {:?}, external = {:?}", sorter.overflow_buffer, ext_sorter.overflow_buffer);
-    }
+    }*/
 
 
 

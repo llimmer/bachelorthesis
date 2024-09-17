@@ -1,5 +1,5 @@
 pub const K: usize = 16; // number of buckets
-pub const BLOCKSIZE: usize = 256; // number of elements that belong to same bucket
+pub const BLOCKSIZE: usize = 128; // number of elements that belong to same bucket
 pub const THRESHOLD: usize = 128; // Threshold from which samplesort is used
 pub const NUM_THREADS: usize = 8;
 
