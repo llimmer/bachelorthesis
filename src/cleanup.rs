@@ -1,3 +1,4 @@
+use log::info;
 use vroom::memory::{Dma, DmaSlice};
 use vroom::{NvmeQueuePair, QUEUE_LENGTH};
 use crate::config::{BLOCKSIZE, K, LBA_PER_CHUNK, LBA_SIZE};
@@ -8,12 +9,12 @@ use crate::sorter::{DMATask, IPS2RaSorter, Task};
 impl IPS2RaSorter {
     #[inline(never)]
     pub fn cleanup(&mut self, task: &mut Task) {
-        println!("Starting cleanup");
+        info!("Starting cleanup");
         let mut sum = 0;
         let overflow_bucket = compute_overflow_bucket(&self.element_counts) as usize;
 
         for i in 0..K {
-            println!("\n\ni = {}:", i);
+            info!("\n\ni = {}:", i);
             // dst = start of bucket
             let mut dst = sum as usize;
 
@@ -25,53 +26,53 @@ impl IPS2RaSorter {
                 assert_eq!(self.overflow_buffer.len(), BLOCKSIZE);
                 let to_write: usize = BLOCKSIZE + self.block_counts[i];
 
-                println!("Overflow: tailsize = {}, to_write = {}", tailsize, to_write);
+                info!("Overflow: tailsize = {}, to_write = {}", tailsize, to_write);
 
                 // case overflowbuffer > frontspace
                 let mut to_write_front = to_write - tailsize;
                 if to_write_front < BLOCKSIZE {
-                    println!("Overflow: to_write_front: {} < BLOCKSIZE: {}", to_write_front, BLOCKSIZE);
+                    info!("Overflow: to_write_front: {} < BLOCKSIZE: {}", to_write_front, BLOCKSIZE);
                     // fill front
-                    println!("Copying {to_write_front} elements from overflow_buffer[..{to_write_front}] to {dst}");
-                    println!("Src: -> {:?}", &self.overflow_buffer[..to_write_front]);
+                    info!("Copying {to_write_front} elements from overflow_buffer[..{to_write_front}] to {dst}");
+                    info!("Src: -> {:?}", &self.overflow_buffer[..to_write_front]);
                     let target_slice = &mut task.arr[dst..dst + to_write_front];
                     target_slice.copy_from_slice(&self.overflow_buffer[..to_write_front]);
                     dst = sum as usize - tailsize;
 
                     // fill back
                     let overflow_back = BLOCKSIZE - to_write_front;
-                    println!("Copying {overflow_back} elements from overflow_buffer[{to_write_front}..] to {dst}");
-                    println!("Src: -> {:?}", &self.overflow_buffer[to_write_front..]);
+                    info!("Copying {overflow_back} elements from overflow_buffer[{to_write_front}..] to {dst}");
+                    info!("Src: -> {:?}", &self.overflow_buffer[to_write_front..]);
                     let target_slice = &mut task.arr[dst..dst + overflow_back];
                     target_slice.copy_from_slice(&self.overflow_buffer[to_write_front..]);
                     dst += overflow_back;
                     tailsize -= overflow_back;
 
                     // fill back with blocks
-                    println!("Copying {tailsize} elements from block {i} to {dst}");
-                    println!("Src: -> {:?}", &self.blocks[i][0..self.block_counts[i]]);
+                    info!("Copying {tailsize} elements from block {i} to {dst}");
+                    info!("Src: -> {:?}", &self.blocks[i][0..self.block_counts[i]]);
                     let target_slice = &mut task.arr[dst..dst + tailsize];
                     target_slice.copy_from_slice(&self.blocks[i][0..self.block_counts[i]]);
                 } else { // case overflowbuffer <= frontspace
-                    println!("Overflow: to_write_front: {} >= BLOCKSIZE: {}", to_write_front, BLOCKSIZE);
+                    info!("Overflow: to_write_front: {} >= BLOCKSIZE: {}", to_write_front, BLOCKSIZE);
                     // fill front
-                    println!("Copying {BLOCKSIZE} elements from overflow_buffer[..] to {dst}");
-                    println!("Src: -> {:?}", &self.overflow_buffer[..]);
+                    info!("Copying {BLOCKSIZE} elements from overflow_buffer[..] to {dst}");
+                    info!("Src: -> {:?}", &self.overflow_buffer[..]);
                     let target_slice = &mut task.arr[dst..dst + BLOCKSIZE];
                     target_slice.copy_from_slice(&self.overflow_buffer[..]);
                     dst += BLOCKSIZE;
                     to_write_front -= BLOCKSIZE;
 
                     // fill front with blocks
-                    println!("Copying {to_write_front} elements from block {i} to {dst}");
-                    println!("Src: -> {:?}", &self.blocks[i][..to_write_front]);
+                    info!("Copying {to_write_front} elements from block {i} to {dst}");
+                    info!("Src: -> {:?}", &self.blocks[i][..to_write_front]);
                     let target_slice = &mut task.arr[dst..dst + to_write_front];
                     target_slice.copy_from_slice(&self.blocks[i][..to_write_front]);
                     dst = sum as usize - tailsize;
 
                     // fill back with blocks
-                    println!("Copying {tailsize} elements from block {i} to {dst}");
-                    println!("Src: -> {:?}", &self.blocks[i][to_write_front..]);
+                    info!("Copying {tailsize} elements from block {i} to {dst}");
+                    info!("Src: -> {:?}", &self.blocks[i][to_write_front..]);
                     let target_slice = &mut task.arr[dst..dst + tailsize];
                     target_slice.copy_from_slice(&self.blocks[i][to_write_front..]);
                 }
@@ -81,31 +82,31 @@ impl IPS2RaSorter {
             let mut to_write: usize = 0;
 
             if write_ptr <= self.boundaries[i] as i64 || write_ptr as usize > task.arr.len() {
-                println!("write ptr: {write_ptr} <= boundaries: {} or write ptr: {write_ptr} > task.size: {} --> skip", self.boundaries[i], task.arr.len());
+                info!("write ptr: {write_ptr} <= boundaries: {} or write ptr: {write_ptr} > task.size: {} --> skip", self.boundaries[i], task.arr.len());
                 // do nothing
             }
             // write ptr > sum => (write ptr-sum) elements overwrite to right
             // TODO: check if i!=K-1 is necessary
             else if write_ptr > sum as i64 && i != K - 1 {
-                println!("write ptr: {write_ptr} > sum: {sum} => (write ptr-sum): {} elements overwrite to right", write_ptr as u64-sum);
+                info!("write ptr: {write_ptr} > sum: {sum} => (write ptr-sum): {} elements overwrite to right", write_ptr as u64-sum);
                 // read elements and write to correct position
                 // TODO: check if possible with slice copy
-                println!("Copying {} elements from {sum} to {dst}", write_ptr as u64-sum);
-                println!("Src: -> {:?}", &task.arr[sum as usize..sum as usize + (write_ptr as u64-sum) as usize]);
-                println!("Dst: -> {:?}", &task.arr[dst..dst + (write_ptr as u64-sum) as usize]);
+                info!("Copying {} elements from {sum} to {dst}", write_ptr as u64-sum);
+                info!("Src: -> {:?}", &task.arr[sum as usize..sum as usize + (write_ptr as u64-sum) as usize]);
+                info!("Dst: -> {:?}", &task.arr[dst..dst + (write_ptr as u64-sum) as usize]);
                 for j in 0..((write_ptr as u64 - sum) as usize) {
                     let element = task.arr[sum as usize + j];
                     task.arr[dst] = element;
                     dst += 1;
                 }
             } else {
-                println!("write ptr: {write_ptr} <= sum: {sum}");
+                info!("write ptr: {write_ptr} <= sum: {sum}");
                 // fill the back
                 to_write = sum as usize - write_ptr as usize;
                 if to_write > 0 {
-                    println!("Copying {to_write} elements from block {i} to {write_ptr}");
-                    println!("Src: -> {:?}", &self.blocks[i][..to_write]);
-                    println!("Dst: -> {:?}", &task.arr[write_ptr as usize..sum as usize]);
+                    info!("Copying {to_write} elements from block {i} to {write_ptr}");
+                    info!("Src: -> {:?}", &self.blocks[i][..to_write]);
+                    info!("Dst: -> {:?}", &task.arr[write_ptr as usize..sum as usize]);
                     let target_slice = &mut task.arr[write_ptr as usize..sum as usize];
                     target_slice.copy_from_slice(&self.blocks[i][..to_write]);
                 }
@@ -114,9 +115,9 @@ impl IPS2RaSorter {
             // fill the front with remaining elements from blocks buffer
             let remaining = self.block_counts[i] - to_write;
             if remaining > 0 {
-                println!("Copying {remaining} elements from block {i} to {dst}");
-                println!("Src: -> {:?}", &self.blocks[i][to_write..self.block_counts[i]]);
-                println!("Dst: -> {:?}", &task.arr[dst..dst + remaining]);
+                info!("Copying {remaining} elements from block {i} to {dst}");
+                info!("Src: -> {:?}", &self.blocks[i][to_write..self.block_counts[i]]);
+                info!("Dst: -> {:?}", &task.arr[dst..dst + remaining]);
                 let target_slice = &mut task.arr[dst..dst + remaining];
                 target_slice.copy_from_slice(&self.blocks[i][to_write..self.block_counts[i]]);
             }
@@ -124,7 +125,7 @@ impl IPS2RaSorter {
     }
 
     pub fn cleanup_ext(&mut self, task: &mut DMATask) {
-        println!("Starting external cleanup");
+        info!("Starting external cleanup");
         let mut sum = 0;
         let overflow_bucket = compute_overflow_bucket(&self.element_counts) as usize;
 
@@ -137,7 +138,7 @@ impl IPS2RaSorter {
         assert!(buffer.len() > 1);
 
         for i in 0..K {
-            println!("\n\ni = {}:", i);
+            info!("\n\ni = {}:", i);
             // dst = start of bucket
             let mut dst = sum as usize;
 
@@ -150,19 +151,19 @@ impl IPS2RaSorter {
                 assert_eq!(self.overflow_buffer.len(), BLOCKSIZE);
                 let to_write: usize = BLOCKSIZE + self.block_counts[i];
 
-                println!("Overflow: tailsize = {}, to_write = {}", tailsize, to_write);
+                info!("Overflow: tailsize = {}, to_write = {}", tailsize, to_write);
 
                 // case overflowbuffer > frontspace
                 let mut to_write_front = to_write - tailsize;
                 if to_write_front < BLOCKSIZE {
-                    println!("Overflow: to_write_front: {} < BLOCKSIZE: {}", to_write_front, BLOCKSIZE);
+                    info!("Overflow: to_write_front: {} < BLOCKSIZE: {}", to_write_front, BLOCKSIZE);
                     // fill front
                     // read from ssd
                     let start_lba = calculate_lba(dst);
                     read_elements(&mut qpair, &mut buffer[0], start_lba, dst%BLOCKSIZE, to_write_front, false);
 
                     // copy to slice
-                    println!("Copying {to_write_front} elements from overflow_buffer[..{to_write_front}] to {dst}");
+                    info!("Copying {to_write_front} elements from overflow_buffer[..{to_write_front}] to {dst}");
                     let target_slice = &mut buffer[0][(dst%(LBA_SIZE/8))*8..((dst%(LBA_SIZE/8)) + to_write_front)*8];
                     target_slice.copy_from_slice(u64_to_u8_slice(&mut self.overflow_buffer[..to_write_front]));
 
@@ -179,7 +180,7 @@ impl IPS2RaSorter {
                     read_elements(&mut qpair, &mut buffer[0], start_lba, dst%BLOCKSIZE, overflow_back, false);
 
                     // copy to slice
-                    println!("Copying {overflow_back} elements from overflow_buffer[{to_write_front}..] to {dst}");
+                    info!("Copying {overflow_back} elements from overflow_buffer[{to_write_front}..] to {dst}");
                     let target_slice = &mut buffer[0][(dst%(LBA_SIZE/8))*8..((dst%(LBA_SIZE/8)) + overflow_back)*8];
                     target_slice.copy_from_slice(u64_to_u8_slice(&mut self.overflow_buffer[to_write_front..]));
 
@@ -195,7 +196,7 @@ impl IPS2RaSorter {
                     read_elements(&mut qpair, &mut buffer[0], start_lba, dst%BLOCKSIZE, tailsize, false);
 
                     // copy to slice
-                    println!("Copying {tailsize} elements from block {i} to {dst}");
+                    info!("Copying {tailsize} elements from block {i} to {dst}");
                     let target_slice = &mut buffer[0][(dst%(LBA_SIZE/8))*8..((dst%(LBA_SIZE/8)) + tailsize)*8];
                     target_slice.copy_from_slice(u64_to_u8_slice(&mut self.blocks[i][0..self.block_counts[i]]));
 
@@ -203,14 +204,14 @@ impl IPS2RaSorter {
                     write_elements(&mut qpair, &mut buffer[0], start_lba, dst%BLOCKSIZE, tailsize);
 
                 } else { // case overflowbuffer <= frontspace
-                    println!("Overflow: to_write_front: {} >= BLOCKSIZE: {}", to_write_front, BLOCKSIZE);
+                    info!("Overflow: to_write_front: {} >= BLOCKSIZE: {}", to_write_front, BLOCKSIZE);
                     // fill front
                     // read from ssd
                     let start_lba = calculate_lba(dst);
                     read_elements(&mut qpair, &mut buffer[0], start_lba, dst%BLOCKSIZE, BLOCKSIZE, false);
 
                     // copy to slice
-                    println!("Copying {BLOCKSIZE} elements from overflow_buffer[..] to {dst}");
+                    info!("Copying {BLOCKSIZE} elements from overflow_buffer[..] to {dst}");
                     let target_slice = &mut buffer[0][(dst%(LBA_SIZE/8))*8..((dst%(LBA_SIZE/8)) + BLOCKSIZE)*8];
                     target_slice.copy_from_slice(u64_to_u8_slice(&mut self.overflow_buffer[..]));
 
@@ -226,7 +227,7 @@ impl IPS2RaSorter {
                     read_elements(&mut qpair, &mut buffer[0], start_lba, dst%BLOCKSIZE, to_write_front, false);
 
                     // copy to slice
-                    println!("Copying {to_write_front} elements from block {i} to {dst}");
+                    info!("Copying {to_write_front} elements from block {i} to {dst}");
                     let target_slice = &mut buffer[0][(dst%(LBA_SIZE/8))*8..((dst%(LBA_SIZE/8)) + to_write_front)*8];
                     target_slice.copy_from_slice(u64_to_u8_slice(&mut self.blocks[i][..to_write_front]));
 
@@ -241,7 +242,7 @@ impl IPS2RaSorter {
                     read_elements(&mut qpair, &mut buffer[0], start_lba, dst%BLOCKSIZE, tailsize, false);
 
                     // copy to slice
-                    println!("Copying {tailsize} elements from block {i} to {dst}");
+                    info!("Copying {tailsize} elements from block {i} to {dst}");
                     let target_slice = &mut buffer[0][(dst%(LBA_SIZE/8))*8..((dst%(LBA_SIZE/8)) + tailsize)*8];
                     target_slice.copy_from_slice(u64_to_u8_slice(&mut self.blocks[i][to_write_front..]));
 
@@ -255,14 +256,14 @@ impl IPS2RaSorter {
             let mut to_write: usize = 0;
 
             if write_ptr <= self.boundaries[i] as i64 || write_ptr as usize > task.size {
-                println!("write ptr: {write_ptr} <= boundaries: {} or write ptr: {write_ptr} > task.size: {} --> skip", self.boundaries[i], task.size);
+                info!("write ptr: {write_ptr} <= boundaries: {} or write ptr: {write_ptr} > task.size: {} --> skip", self.boundaries[i], task.size);
                 // do nothing
             }
 
             // write ptr > sum => (write ptr-sum) elements overwrite to right
             // TODO: check if i!=K-1 is necessary
             else if write_ptr > sum as i64 && i != K - 1 {
-                println!("write ptr: {write_ptr} > sum: {sum} => (write ptr-sum): {} elements overwrite to right", write_ptr as u64-sum);
+                info!("write ptr: {write_ptr} > sum: {sum} => (write ptr-sum): {} elements overwrite to right", write_ptr as u64-sum);
                 let to_write = (write_ptr as u64 - sum) as usize;
                 // read elements and write to correct position
 
@@ -275,9 +276,9 @@ impl IPS2RaSorter {
 
                 let (src_buffer, dst_buffer) = buffer.split_at_mut(1); // Split into two non-overlapping parts
 
-                println!("Copying {to_write} elements from {sum} to {dst}");
-                println!("Src: -> {:?}", u8_to_u64_slice(&mut src_buffer[0][(sum as usize % (LBA_SIZE/8))*8..((sum as usize % (LBA_SIZE/8)) + to_write)*8]));
-                println!("Dst: -> {:?}\n", u8_to_u64_slice(&mut dst_buffer[0][(dst % (LBA_SIZE/8))*8..((dst % (LBA_SIZE/8)) + to_write)*8]));
+                info!("Copying {to_write} elements from {sum} to {dst}");
+                info!("Src: -> {:?}", u8_to_u64_slice(&mut src_buffer[0][(sum as usize % (LBA_SIZE/8))*8..((sum as usize % (LBA_SIZE/8)) + to_write)*8]));
+                info!("Dst: -> {:?}\n", u8_to_u64_slice(&mut dst_buffer[0][(dst % (LBA_SIZE/8))*8..((dst % (LBA_SIZE/8)) + to_write)*8]));
                 let target_slice = &mut dst_buffer[0][(dst % (LBA_SIZE/8))*8..((dst % (LBA_SIZE/8)) + to_write)*8];
                 target_slice.copy_from_slice(&src_buffer[0][(sum as usize % (LBA_SIZE/8))*8..((sum as usize % (LBA_SIZE/8)) + to_write)*8]);
 
@@ -288,7 +289,7 @@ impl IPS2RaSorter {
                 dst += to_write;
 
             } else {
-                println!("write ptr: {write_ptr} <= sum: {sum}");
+                info!("write ptr: {write_ptr} <= sum: {sum}");
                 // fill the back
                 to_write = sum as usize - write_ptr as usize;
                 if to_write > 0 {
@@ -297,9 +298,9 @@ impl IPS2RaSorter {
                     read_elements(&mut qpair, &mut buffer[0], start_lba, write_ptr as usize % BLOCKSIZE, to_write, false);
 
                     // copy to slice
-                    println!("Copying {to_write} elements from block {i} to {write_ptr}");
-                    println!("Src: -> {:?}", &self.blocks[i][..to_write]);
-                    println!("Dst: -> {:?}\n", u8_to_u64_slice(&mut buffer[0][(write_ptr as usize % (LBA_SIZE/8))*8..((write_ptr as usize % (LBA_SIZE/8)) + to_write)*8]));
+                    info!("Copying {to_write} elements from block {i} to {write_ptr}");
+                    info!("Src: -> {:?}", &self.blocks[i][..to_write]);
+                    info!("Dst: -> {:?}\n", u8_to_u64_slice(&mut buffer[0][(write_ptr as usize % (LBA_SIZE/8))*8..((write_ptr as usize % (LBA_SIZE/8)) + to_write)*8]));
                     let target_slice = &mut buffer[0][(write_ptr as usize % (LBA_SIZE/8))*8..((write_ptr as usize % (LBA_SIZE/8)) + to_write)*8];
                     target_slice.copy_from_slice(u64_to_u8_slice(&mut self.blocks[i][..to_write]));
 
@@ -316,9 +317,9 @@ impl IPS2RaSorter {
                 read_elements(&mut qpair, &mut buffer[0], start_lba, dst%BLOCKSIZE, remaining, false);
 
                 // copy to slice
-                println!("Copying {remaining} elements from block {i} to {dst}");
-                println!("Src: -> {:?}", &self.blocks[i][to_write..self.block_counts[i]]);
-                println!("Dst: -> {:?}\n", u8_to_u64_slice(&mut buffer[0][(dst%(LBA_SIZE/8))*8..((dst%(LBA_SIZE/8)) + remaining)*8]));
+                info!("Copying {remaining} elements from block {i} to {dst}");
+                info!("Src: -> {:?}", &self.blocks[i][to_write..self.block_counts[i]]);
+                info!("Dst: -> {:?}\n", u8_to_u64_slice(&mut buffer[0][(dst%(LBA_SIZE/8))*8..((dst%(LBA_SIZE/8)) + remaining)*8]));
 
                 let target_slice = &mut buffer[0][(dst%(LBA_SIZE/8))*8..((dst%(LBA_SIZE/8)) + remaining)*8];
                 target_slice.copy_from_slice(u64_to_u8_slice(&mut self.blocks[i][to_write..self.block_counts[i]]));
@@ -333,15 +334,15 @@ impl IPS2RaSorter {
 // read num_elements elements from target_lba (+target_offset elements) to buffer. Wait for completion.
 fn read_elements(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, target_lba: usize, target_offset: usize, num_elements: usize, write: bool) {
     let num_lba = (target_offset*8 + num_elements*8 + LBA_SIZE - 1) / LBA_SIZE;
-    println!("Reading {} elements (=> {} lbas) from lba {} with offset {} to buffer", num_elements, num_lba, target_lba, target_offset);
+    info!("Reading {} elements (=> {} lbas) from lba {} with offset {} to buffer", num_elements, num_lba, target_lba, target_offset);
     let tmp = qpair.submit_io(&mut buffer.slice(0..num_lba*LBA_SIZE), target_lba as u64, write);
     qpair.complete_io(tmp);
-    println!("Read: {:?}", u8_to_u64_slice(&mut buffer[0..num_lba*LBA_SIZE]));
+    info!("Read: {:?}", u8_to_u64_slice(&mut buffer[0..num_lba*LBA_SIZE]));
 }
 
 fn write_elements(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, target_lba: usize, target_offset: usize, num_elements: usize) {
     let num_lba = (target_offset*8 + num_elements*8 + LBA_SIZE - 1) / LBA_SIZE;
-    println!("Reading {} elements (=> {} lbas) from lba {} with offset {} to buffer", num_elements, num_lba, target_lba, target_offset);
+    info!("Reading {} elements (=> {} lbas) from lba {} with offset {} to buffer", num_elements, num_lba, target_lba, target_offset);
     let tmp = qpair.submit_io(&mut buffer.slice(0..num_lba*LBA_SIZE), target_lba as u64, true);
     qpair.complete_io(tmp);
 }
@@ -382,11 +383,11 @@ mod tests {
         //let mut s = Sorter::new_(&mut input, decision_tree, 0, pointers, boundaries, 0, blocks, element_counts, false, overflow_buffer);
         //s.cleanup();
         //
-        //println!("{}", s);
+        //info!("{}", s);
 
         check_range(&input, 1, 64);
 
-        println!("{:?}", input)
+        info!("{:?}", input)
     }
 
     #[test]
@@ -401,10 +402,10 @@ mod tests {
         //let mut s = Sorter::new_(&mut input, decision_tree, 0, pointers, boundaries, 0, blocks, element_counts, true, overflow_buffer);
         //s.cleanup();
 
-        //println!("{}", s);
+        //info!("{}", s);
 
         check_range(&input, 1, 64);
 
-        println!("{:?}", input)
+        info!("{:?}", input)
     }
 }
