@@ -27,7 +27,14 @@ fn main() -> Result<(), Box<dyn Error>>{
     let mut rng = StdRng::seed_from_u64(12345);
     data.shuffle(&mut rng);
 
-    clear_chunks(CHUNKS_PER_HUGE_PAGE_1G*2, &mut qpair);
+    println!("Clearing chunks");
+    clear_chunks(CHUNKS_PER_HUGE_PAGE_1G*2+10, &mut qpair);
+    // read line from stdin TODO: remove
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input).unwrap();
+
+
+    println!("Setting up array");
     setup_array(&mut data, &mut qpair);
 
     println!("Preparation complete");
