@@ -1,0 +1,14 @@
+/vroom/target
+Cargo.lock
+
+# rustfmt
+**/*.rs.bk
+
+# Jetbrains
+.idea/
+*.iml
+
+# misc
+.DS_Store
+# Shakespeare
+*.txt
