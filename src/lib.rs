@@ -15,5 +15,7 @@ mod conversion;
 mod setup;
 mod merge;
 
-pub use sort::sort;
+pub use sort::*;
 pub use base_case::insertion_sort;
+pub use setup::{clear_chunks, setup_array};
+pub use config::*;

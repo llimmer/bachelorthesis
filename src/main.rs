@@ -33,7 +33,7 @@ use crate::config::{CHUNKS_PER_HUGE_PAGE_1G, CHUNK_SIZE, ELEMENTS_PER_CHUNK, HUG
 use crate::conversion::{u64_to_u8_slice, u8_to_u64, u8_to_u64_slice};
 use crate::merge::merge_sequential;
 use crate::permutation::calculate_hugepage_chunk_block;
-use crate::setup::{clear, setup_array};
+use crate::setup::{clear_chunks, setup_array};
 use crate::sort::{sort, sort_dma, sort_parallel};
 use crate::sorter::{DMATask, IPS2RaSorter, Task};
 

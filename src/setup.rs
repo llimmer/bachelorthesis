@@ -34,7 +34,7 @@ pub fn setup_array(arr: &mut [u64], qpair: &mut NvmeQueuePair) {
 
 }
 
-pub fn clear(chunks: usize, qpair: &mut NvmeQueuePair) {
+pub fn clear_chunks(chunks: usize, qpair: &mut NvmeQueuePair) {
     let mut buffer = Dma::allocate(HUGE_PAGE_SIZE_2M).unwrap();
     let tmp = [0; LBA_SIZE*LBA_PER_CHUNK];
     buffer[0..tmp.len()].copy_from_slice(&tmp);

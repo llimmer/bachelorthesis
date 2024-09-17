@@ -3,16 +3,17 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize};
 use std::{io, thread};
 use log::{debug, error, info};
-use crate::config::{BLOCKSIZE, CHUNKS_PER_HUGE_PAGE_1G, CHUNK_SIZE, HUGE_PAGE_SIZE_1G, K, LBA_PER_CHUNK, NUM_THREADS, THRESHOLD};
+use crate::config::{BLOCKSIZE, CHUNKS_PER_HUGE_PAGE_1G, CHUNK_SIZE, HUGE_PAGES_1G, HUGE_PAGE_SIZE_1G, K, LBA_PER_CHUNK, NUM_THREADS, THRESHOLD};
 use crate::parallel::process_task;
 use crate::sorter::{IPS2RaSorter, Task};
-use crate::setup::{clear, setup_array};
+use crate::setup::{clear_chunks, setup_array};
 use std::error::Error;
 use rand::prelude::{SliceRandom, StdRng};
 use rand::SeedableRng;
 use vroom::memory::{Dma, DmaSlice};
-use vroom::{NvmeQueuePair, QUEUE_LENGTH};
+use vroom::{NvmeDevice, NvmeQueuePair, QUEUE_LENGTH};
 use crate::conversion::u8_to_u64_slice;
+use crate::merge::merge_sequential;
 
 pub fn sort(arr: &mut [u64]) {
     let mut s = IPS2RaSorter::new_sequential();
@@ -29,6 +30,56 @@ pub fn sort_parallel(arr: &mut [u64]) {
     let mut initial_task = Task::new(arr, 0);
     initial_task.sample();
     process_task(&mut initial_task);
+}
+
+pub fn sort_merge(mut nvme: NvmeDevice, len: usize, parallel: bool) -> NvmeDevice{
+    let mut qpair = nvme.create_io_queue_pair(QUEUE_LENGTH).unwrap();
+    let mut sort_buffer = Dma::allocate(HUGE_PAGE_SIZE_1G).unwrap();
+
+    let mut buffers: Vec<Dma<u8>> = Vec::new();
+    for i in 0..HUGE_PAGES_1G-1 {
+        buffers.push(Dma::allocate(HUGE_PAGE_SIZE_1G).unwrap());
+    }
+
+    if !parallel {
+        let mut sorter = IPS2RaSorter::new_sequential();
+        let mut remaining = len;
+        for i in 0..((len + HUGE_PAGE_SIZE_1G / 8 - 1) / (HUGE_PAGE_SIZE_1G / 8)) {
+            // read hugepage from ssd
+            println!("Reading hugepage {i}");
+            read_write_hugepage(&mut qpair, i, &mut sort_buffer, false);
+            println!("Done");
+
+            let u64slice = u8_to_u64_slice(&mut sort_buffer[0..{
+                if remaining > HUGE_PAGE_SIZE_1G / 8 {
+                    remaining = remaining - HUGE_PAGE_SIZE_1G / 8;
+                    HUGE_PAGE_SIZE_1G
+                } else {
+                    let res = remaining;
+                    remaining = 0;
+                    res * 8
+                }
+            }]);
+            println!("Creating and sampling task of length {}", u64slice.len());
+            let mut task = Task::new(u64slice, 0);
+            task.sample();
+            println!("Done");
+            println!("Sorting hugepage {i}");
+            sorter.sort_sequential(&mut task);
+            println!("Done");
+            println!("Writing hugepage {i}");
+            read_write_hugepage(&mut qpair, i, &mut sort_buffer, true);
+            println!("Done");
+        }
+
+        merge_sequential(&mut qpair, len, &mut buffers, &mut sort_buffer);
+    } else {
+        unimplemented!();
+    }
+
+
+
+    nvme
 }
 
 
@@ -51,7 +102,7 @@ pub fn sort_dma(pci_addr: &str, len: usize, parallel: bool) -> Result<(), Box<dy
 
     // Prepare data: //todo: remove
     println!("Clearing hugepages");
-    clear(CHUNKS_PER_HUGE_PAGE_1G *2+10, &mut qpair);
+    clear_chunks(CHUNKS_PER_HUGE_PAGE_1G *2+10, &mut qpair);
     println!("Done");
     let len = 134217728*2+3;
 

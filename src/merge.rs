@@ -34,7 +34,7 @@ impl PartialOrd for HeapEntry {
     }
 }
 
-pub fn merge_sequential(len: usize, qpair: &mut NvmeQueuePair, buffer: &mut Vec<Dma<u8>>, output_buffer: &mut Dma<u8>) {
+pub fn merge_sequential(qpair: &mut NvmeQueuePair, len: usize, buffer: &mut Vec<Dma<u8>>, output_buffer: &mut Dma<u8>) {
     assert_eq!(buffer.len(), HUGE_PAGES_1G - 1);
 
 
@@ -227,7 +227,7 @@ mod tests {
     use vroom::QUEUE_LENGTH;
     use crate::config::CHUNK_SIZE;
     use crate::conversion::u64_to_u8_slice;
-    use crate::setup::clear;
+    use crate::setup::clear_chunks;
     use super::*;
 
     #[test]
@@ -237,7 +237,7 @@ mod tests {
         let mut buffer = Dma::allocate(HUGE_PAGE_SIZE_1G).unwrap();
         // Prepare data: //todo: remove
         println!("Clearing hugepages");
-        clear(CHUNKS_PER_HUGE_PAGE_1G *1024+10, &mut qpair);
+        clear_chunks(CHUNKS_PER_HUGE_PAGE_1G *1024+10, &mut qpair);
         println!("Done");
         // prepare first 4 hugepages
         let len = HUGE_PAGE_SIZE_1G /8;
@@ -264,7 +264,7 @@ mod tests {
             buffers.push(Dma::allocate(HUGE_PAGE_SIZE_1G).unwrap());
         }
         let mut output_buffer = Dma::allocate(HUGE_PAGE_SIZE_1G).unwrap();
-        merge_sequential(total_length, &mut qpair, &mut buffers, &mut output_buffer);
+        merge_sequential(&mut qpair, total_length, &mut buffers, &mut output_buffer);
 
 
 
