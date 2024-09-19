@@ -12,7 +12,7 @@ impl IPS2RaSorter {
         }
         debug!("Input: {:?}", task.arr);
 
-        unsafe{self.classify(task)};
+        self.classify(task);
         debug!("Array after classification: {:?}", task.arr);
         debug!("Classified Elements: {}", self.classified_elements);
         debug!("Element Count: {:?}", self.element_counts);

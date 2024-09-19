@@ -1,7 +1,7 @@
 use log::{debug, info};
 use vroom::memory::DmaSlice;
-use crate::config::{K, BLOCKSIZE, CHUNKS_PER_HUGE_PAGE_2M, CHUNK_SIZE, LBA_PER_CHUNK, ELEMENTS_PER_CHUNK, HUGE_PAGE_SIZE_2M};
-use crate::conversion::{u64_to_u8_slice, u8_to_u64};
+use crate::config::{K, BLOCKSIZE, CHUNKS_PER_HUGE_PAGE_2M, CHUNK_SIZE, LBA_PER_CHUNK, ELEMENTS_PER_CHUNK, HUGE_PAGE_SIZE_2M, LBA_SIZE};
+use crate::conversion::{u64_to_u8_slice, u8_to_u64, u8_to_u64_slice};
 use crate::sorter::{DMATask, IPS2RaSorter, Task};
 
 impl IPS2RaSorter {
@@ -14,8 +14,8 @@ impl IPS2RaSorter {
                 let block_idx = find_bucket_ips2ra(*element, task.level);
 
                 *self.element_counts.get_unchecked_mut(block_idx) += 1;
-        
-            
+
+
                 debug!("i = {i} element = {element} -> Bucket {block_idx}");
 
                 // TODO: paper suggests to check if full first, then insert. Maybe change.
@@ -38,29 +38,29 @@ impl IPS2RaSorter {
     pub fn classify_ext(&mut self, task: &mut DMATask) {
         // using 2M hugepages
         debug!("Starting DMA classification: level {}, Chunks/HP: {}, tmp: {}", task.level, CHUNKS_PER_HUGE_PAGE_2M, ELEMENTS_PER_CHUNK* CHUNKS_PER_HUGE_PAGE_2M);
-        let mut write_hugepage = 0;
-        let mut write_chunk = 0;
-        let mut write_idx = 0;
+        let mut write_hugepage = task.start_lba / (CHUNKS_PER_HUGE_PAGE_2M * LBA_PER_CHUNK);
+        let mut write_chunk = (task.start_lba % (CHUNKS_PER_HUGE_PAGE_2M * LBA_PER_CHUNK)) / LBA_PER_CHUNK;
+        let mut write_idx = task.offset;
 
         assert!(self.qpair.is_some(), "Cannot classify_in_out without qpair");
         assert!(self.buffers.is_some(), "Cannot classify_in_out without buffers");
-
-
 
 
         let qpair = self.qpair.as_mut().unwrap();
         let buffer = self.buffers.as_mut().unwrap();
         let num_buffers = buffer.len();
 
-        let max_buffered_elements = K*BLOCKSIZE;
-        let max_storage = num_buffers*HUGE_PAGE_SIZE_2M/8;
+        let max_buffered_elements = K * BLOCKSIZE + task.offset;
+        let max_storage = num_buffers * HUGE_PAGE_SIZE_2M / 8;
         assert!(max_buffered_elements <= max_storage, "Not enough storage for classification: {} > {}", max_buffered_elements, max_storage);
 
 
         //assert!(task.size > 4*CHUNK_SIZE/8, "Task size too small for DMA classification");
         // Load first HugePage
+        debug!("Loading first hugepage:");
         for i in 0..CHUNKS_PER_HUGE_PAGE_2M {
-            qpair.submit_io(&mut buffer[0].slice(i*CHUNK_SIZE..(i+1)*CHUNK_SIZE), (i*LBA_PER_CHUNK) as u64, false);
+            debug!("Loading chunk {} (LBA: {})", i, i*LBA_PER_CHUNK + task.start_lba);
+            qpair.submit_io(&mut buffer[0].slice(i * CHUNK_SIZE..(i + 1) * CHUNK_SIZE), ((i * LBA_PER_CHUNK) + task.start_lba) as u64, false);
         }
 
         // DEBUG only
@@ -71,26 +71,27 @@ impl IPS2RaSorter {
 
         let mut cur_hugepage = 0;
         let mut cur_chunk = 0;
-        for i in 0..task.size {
+        for i in task.offset..task.size + task.offset {
 
             // update current indices
-            let idx = i % (ELEMENTS_PER_CHUNK* CHUNKS_PER_HUGE_PAGE_2M);
+            let idx = i % (ELEMENTS_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_2M);
 
-            if i % ELEMENTS_PER_CHUNK == 0 {
-                debug!("i = {i}, idx = {idx}, cur_hugepage = {cur_hugepage}, cur_chunk = {cur_chunk}");
+            if i % ELEMENTS_PER_CHUNK == 0 || i == task.offset {
+                debug!("i: {i}, idx: {idx}, cur_hugepage: {cur_hugepage}, cur_chunk: {cur_chunk}");
                 qpair.complete_io(1);
-                if i != 0 {
+                if i != task.offset {
                     cur_chunk = (cur_chunk + 1) % CHUNKS_PER_HUGE_PAGE_2M;
-                    if i%(HUGE_PAGE_SIZE_2M /8) == 0{
+                    if i % (HUGE_PAGE_SIZE_2M / 8) == 0 {
                         cur_hugepage += 1;
                     }
                 }
                 // Load next chunk
-                qpair.submit_io(&mut buffer[(cur_hugepage+1)%num_buffers].slice(cur_chunk*CHUNK_SIZE..(cur_chunk+1)*CHUNK_SIZE), (((cur_hugepage+1)* CHUNKS_PER_HUGE_PAGE_2M *LBA_PER_CHUNK)+cur_chunk*LBA_PER_CHUNK) as u64, false);
-                debug!("Current Hugepage: {}, Current Chunk: {}, Loading LBA {} to hugepage {}, chunk {}", cur_hugepage, cur_chunk, ((cur_hugepage+1)*CHUNKS_PER_HUGE_PAGE_2M*LBA_PER_CHUNK)+cur_chunk*LBA_PER_CHUNK, (cur_hugepage+1)%num_buffers, cur_chunk);
+                // TODO: only load if elements remaining
+                qpair.submit_io(&mut buffer[(cur_hugepage + 1) % num_buffers].slice(cur_chunk * CHUNK_SIZE..(cur_chunk + 1) * CHUNK_SIZE), (((cur_hugepage + 1) * CHUNKS_PER_HUGE_PAGE_2M * LBA_PER_CHUNK) + cur_chunk * LBA_PER_CHUNK + task.start_lba) as u64, false);
+                debug!("Current Hugepage: {}, Current Chunk: {}, Loading LBA {} to hugepage {}, chunk {}", cur_hugepage, cur_chunk, ((cur_hugepage+1)*CHUNKS_PER_HUGE_PAGE_2M*LBA_PER_CHUNK)+cur_chunk*LBA_PER_CHUNK + task.start_lba, (cur_hugepage+1)%num_buffers, cur_chunk);
             }
 
-            let element = u8_to_u64(&(&buffer[cur_hugepage%num_buffers])[idx*8..idx*8+8]);
+            let element = u8_to_u64(&(&buffer[cur_hugepage % num_buffers])[idx * 8..idx * 8 + 8]);
 
             let block_idx = find_bucket_ips2ra(element, task.level);
             unsafe {
@@ -102,40 +103,77 @@ impl IPS2RaSorter {
 
                 if *self.block_counts.get_unchecked(block_idx) == BLOCKSIZE {
                     debug!("Block {block_idx} full, writing {BLOCKSIZE} elements to buffer {}: {:?}", write_hugepage % num_buffers, self.blocks[block_idx]);
-                    let target_slice = &mut buffer[write_hugepage % num_buffers][write_chunk * CHUNK_SIZE..(write_chunk + 1) * CHUNK_SIZE];
 
                     let offset = write_idx % ELEMENTS_PER_CHUNK;
-                    debug!("Write_idx: {write_idx}, offset: {}, target slice: ({}..{})", offset, offset*8, (offset+BLOCKSIZE)*8);
-                    target_slice[offset*8..(offset+BLOCKSIZE)*8].copy_from_slice(u64_to_u8_slice(&mut self.blocks[block_idx]));
+                    let mut remaining = CHUNK_SIZE / 8 - offset;
+                    debug!("Offset: {}, remaining: {}", offset, remaining);
 
-                    write_idx += BLOCKSIZE;
-                    *self.block_counts.get_unchecked_mut(block_idx) = 0;
+                    if remaining >= BLOCKSIZE {
+                        let target_slice = &mut buffer[write_hugepage % num_buffers][write_chunk * CHUNK_SIZE..(write_chunk + 1) * CHUNK_SIZE];
+                        debug!("Write_idx: {write_idx}, offset: {}, target slice: ({}..{})", offset, offset*8, (offset+BLOCKSIZE)*8);
+                        target_slice[offset * 8..(offset + BLOCKSIZE) * 8].copy_from_slice(u64_to_u8_slice(&mut self.blocks[block_idx]));
 
-                    // write to disk if chunk is full
-                    if write_idx % ELEMENTS_PER_CHUNK == 0 {
+                        write_idx += BLOCKSIZE;
+                        *self.block_counts.get_unchecked_mut(block_idx) = 0;
+
+                        // write to disk if chunk is full
+                        if write_idx % ELEMENTS_PER_CHUNK == 0 {
+                            let wi = write_hugepage % num_buffers;
+                            debug!("Writing hugepage {}, chunk {} to LBA {}", wi, write_chunk, write_hugepage*CHUNKS_PER_HUGE_PAGE_2M*LBA_PER_CHUNK+write_chunk*LBA_PER_CHUNK + task.start_lba);
+                            qpair.submit_io(&mut buffer[wi].slice(write_chunk * CHUNK_SIZE..(write_chunk + 1) * CHUNK_SIZE), ((write_hugepage * CHUNKS_PER_HUGE_PAGE_2M * LBA_PER_CHUNK) + write_chunk * LBA_PER_CHUNK + task.start_lba) as u64, true);
+                            write_chunk = (write_chunk + 1) % CHUNKS_PER_HUGE_PAGE_2M;
+                            if write_chunk == 0 {
+                                write_hugepage += 1;
+                            }
+
+                            qpair.complete_io(1);
+                        }
+                    } else {
+                        // remaining <= BLOCKSIZE
+                        let target_slice1 = &mut buffer[write_hugepage % num_buffers][write_chunk * CHUNK_SIZE..(write_chunk + 1) * CHUNK_SIZE];
+                        target_slice1[offset * 8..(offset + remaining) * 8].copy_from_slice(u64_to_u8_slice(&mut self.blocks[block_idx][0..remaining]));
+                        assert_eq!(offset + remaining, ELEMENTS_PER_CHUNK, "Not enough space in buffer for block"); //todo: remove after debug
+
+                        // write to disk
                         let wi = write_hugepage % num_buffers;
-                        debug!("Writing hugepage {}, chunk {} to LBA {}", wi, write_chunk, write_hugepage*CHUNKS_PER_HUGE_PAGE_2M*LBA_PER_CHUNK+write_chunk*LBA_PER_CHUNK);
-                        qpair.submit_io(&mut buffer[wi].slice(write_chunk * CHUNK_SIZE..(write_chunk + 1) * CHUNK_SIZE), ((write_hugepage * CHUNKS_PER_HUGE_PAGE_2M * LBA_PER_CHUNK) + write_chunk * LBA_PER_CHUNK) as u64, true);
+                        debug!("Writing hugepage {}, chunk {} to LBA {}", wi, write_chunk, write_hugepage*CHUNKS_PER_HUGE_PAGE_2M*LBA_PER_CHUNK+write_chunk*LBA_PER_CHUNK + task.start_lba);
+                        qpair.submit_io(&mut buffer[wi].slice(write_chunk * CHUNK_SIZE..(write_chunk + 1) * CHUNK_SIZE), ((write_hugepage * CHUNKS_PER_HUGE_PAGE_2M * LBA_PER_CHUNK) + write_chunk * LBA_PER_CHUNK + task.start_lba) as u64, true);
+                        debug!("Wrote: {:?}", u8_to_u64_slice(&mut buffer[wi][write_chunk * CHUNK_SIZE..(write_chunk + 1) * CHUNK_SIZE]));
                         write_chunk = (write_chunk + 1) % CHUNKS_PER_HUGE_PAGE_2M;
                         if write_chunk == 0 {
                             write_hugepage += 1;
                         }
 
                         qpair.complete_io(1);
-                    }
 
+                        let target_slice2 = &mut buffer[write_hugepage % num_buffers][write_chunk * CHUNK_SIZE..(write_chunk + 1) * CHUNK_SIZE];
+                        target_slice2[0..(BLOCKSIZE - remaining) * 8].copy_from_slice(u64_to_u8_slice(&mut self.blocks[block_idx][remaining..BLOCKSIZE]));
+                        debug!("Wrote: {:?} to next chunk", &mut self.blocks[block_idx][remaining..BLOCKSIZE]);
+
+
+                        write_idx += BLOCKSIZE;
+                        *self.block_counts.get_unchecked_mut(block_idx) = 0;
+
+                    }
                 }
             }
         }
-
+        let remaining_elements = write_idx % ELEMENTS_PER_CHUNK;
+        debug!("Classification done. {} elements remaining in buffer", remaining_elements);
         // check for unwritten chunk
         if write_idx % ELEMENTS_PER_CHUNK != 0 {
-            debug!("Final writing hugepage {}, chunk {} to LBA {}", write_hugepage, write_chunk, write_hugepage*CHUNKS_PER_HUGE_PAGE_2M*LBA_PER_CHUNK+write_chunk*LBA_PER_CHUNK);
-            qpair.submit_io(&mut buffer[write_hugepage % num_buffers].slice(write_chunk*CHUNK_SIZE..(write_chunk+1)*CHUNK_SIZE), ((write_hugepage* CHUNKS_PER_HUGE_PAGE_2M *LBA_PER_CHUNK)+cur_chunk*LBA_PER_CHUNK) as u64, true);
+            debug!("Last chunk: {:?}", u8_to_u64_slice(&mut buffer[write_hugepage % num_buffers][write_chunk * CHUNK_SIZE..(write_chunk + 1) * CHUNK_SIZE]));
+            let num_lba = (remaining_elements*8 + LBA_SIZE - 1) / LBA_SIZE;
+            let tmp = qpair.submit_io(&mut buffer[write_hugepage % num_buffers].slice(write_chunk * CHUNK_SIZE..write_chunk * CHUNK_SIZE + num_lba*LBA_SIZE), ((write_hugepage * CHUNKS_PER_HUGE_PAGE_2M * LBA_PER_CHUNK) + write_chunk * LBA_PER_CHUNK + task.start_lba) as u64, true);
+            assert_eq!(tmp, 1);
             qpair.complete_io(1);
         }
 
+        write_idx -= task.offset;
+
+        debug!("Completing last SQEs");
         qpair.complete_io(CHUNKS_PER_HUGE_PAGE_2M);
+        debug!("Done");
         self.classified_elements = write_idx;
     }
 }

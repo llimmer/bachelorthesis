@@ -1,8 +1,8 @@
 use std::cmp::max;
-use std::os::unix::raw::dev_t;
 use log::{debug, info};
-use vroom::memory::DmaSlice;
-use crate::config::{BLOCKSIZE, CHUNKS_PER_HUGE_PAGE_2M, CHUNK_SIZE, HUGE_PAGE_SIZE_2M, K, LBA_PER_CHUNK};
+use vroom::memory::{Dma, DmaSlice};
+use vroom::NvmeQueuePair;
+use crate::config::{BLOCKSIZE, K, LBA_SIZE};
 use crate::classification::{find_bucket_ips2ra};
 use crate::conversion::{u8_to_u64, u8_to_u64_slice};
 use crate::sorter::{DMATask, IPS2RaSorter, Task};
@@ -43,6 +43,9 @@ impl IPS2RaSorter {
     }
     pub fn permutate_blocks(&mut self, task: &mut Task) {
         self.calculate_pointers(task.arr.len());
+
+        debug!("Sorter before permutation: {:?}", self);
+
         let mut pb: usize = self.primary_bucket;
         let mut swap_buffer = [[0; BLOCKSIZE]; 2];
         let mut swap_buffer_idx: usize = 0;
@@ -69,15 +72,15 @@ impl IPS2RaSorter {
 
             // read block into swap buffer
             for i in 0..BLOCKSIZE {
-                swap_buffer[swap_buffer_idx][i] = task.arr[(self.pointers[pb as usize].1 + BLOCKSIZE as i64 + i as i64) as usize];
+                swap_buffer[swap_buffer_idx][i] = task.arr[(self.pointers[pb].1 + BLOCKSIZE as i64 + i as i64) as usize];
             }
-            info!("Read position {} into swap buffer {}: {:?}", self.pointers[pb].1, swap_buffer_idx, swap_buffer[swap_buffer_idx]);
+            debug!("Read position {} into swap buffer {}: {:?}", self.pointers[pb].1 + BLOCKSIZE as i64, swap_buffer_idx, swap_buffer[swap_buffer_idx]);
 
             'inner: loop {
                 let mut bdest = find_bucket_ips2ra(swap_buffer[swap_buffer_idx][0], task.level) as u64;
                 let mut wdest = &mut self.pointers[bdest as usize].0;
                 let mut rdest = &mut self.pointers[bdest as usize].1;
-                info!("First element: {}, Bucket: {}, Write: {}, Read: {}", swap_buffer[swap_buffer_idx][0], bdest, wdest, rdest);
+                debug!("First element: {}, Bucket: {}, Write: {}, Read: {}", swap_buffer[swap_buffer_idx][0], bdest, wdest, rdest);
 
                 if *wdest <= *rdest {
                     // increment wdest pointers
@@ -85,7 +88,7 @@ impl IPS2RaSorter {
 
                     // read block into second swap buffer and write first swap buffer
                     let next_swap_buffer_idx = (swap_buffer_idx + 1) % 2;
-                    info!("writing {:?} to position {}", &mut swap_buffer[swap_buffer_idx], *wdest);
+                    debug!("writing {:?} to position {}", &mut swap_buffer[swap_buffer_idx], *wdest as usize - BLOCKSIZE);
                     for i in 0..BLOCKSIZE {
                         swap_buffer[next_swap_buffer_idx][i] = task.arr[*wdest as usize - BLOCKSIZE + i];
                         task.arr[*wdest as usize - BLOCKSIZE + i] = swap_buffer[swap_buffer_idx][i];
@@ -95,7 +98,7 @@ impl IPS2RaSorter {
                     *wdest += BLOCKSIZE as i64;
                     if *wdest > task.arr.len() as i64 {
                         // write to overflow buffer
-                        info!("Write to overflow buffer - wdest: {}, tasklen: {}", wdest, task.arr.len());
+                        debug!("Write to overflow buffer - wdest: {}, tasklen: {}", wdest, task.arr.len());
 
                         // TODO: debug, remove later
                         assert_eq!(bdest, compute_overflow_bucket(&self.element_counts), "Overflow bucket not correct");
@@ -103,12 +106,12 @@ impl IPS2RaSorter {
                         for i in 0..BLOCKSIZE {
                             self.overflow_buffer.push(swap_buffer[swap_buffer_idx][i]);
                         }
-                        info!("Writing Overflow Buffer: {:?}", &self.overflow_buffer);
+                        debug!("Writing Overflow Buffer: {:?}", &self.overflow_buffer);
                         self.overflow = true;
                         break 'inner;
                     }
                     // write swap buffer
-                    info!("break writing {:?} to position {}", &mut swap_buffer[swap_buffer_idx], *wdest);
+                    debug!("break writing {:?} to position {}", &mut swap_buffer[swap_buffer_idx], *wdest as usize - BLOCKSIZE);
                     for i in 0..BLOCKSIZE {
                         task.arr[*wdest as usize - BLOCKSIZE + i] = swap_buffer[swap_buffer_idx][i];
                     }
@@ -120,6 +123,8 @@ impl IPS2RaSorter {
 
     pub fn permutate_blocks_ext(&mut self, task: &mut DMATask) {
         self.calculate_pointers(task.size);
+
+        debug!("External Sorter before permutation: {:?}", self);
 
         assert!(self.qpair.is_some(), "Cannot classify_in_out without qpair");
         assert!(self.buffers.is_some(), "Cannot classify_in_out without buffers");
@@ -155,26 +160,27 @@ impl IPS2RaSorter {
 
             // TODO: check if already in right bucket and read < write, skip in this case
             // TODO: maybe keep track of loaded hugepages, only write/read if not in memory
+            // TODO: use buffer directly as swap buffer
 
             let idx = self.pointers[pb].1 + BLOCKSIZE as i64;
-            let (hugepage, chunk, block) = calculate_hugepage_chunk_block(idx as usize);
+            //let (hugepage, chunk, block) = calculate_hugepage_chunk_block(idx as usize);
 
             // read chunk
-            lba[swap_buffer_idx] = hugepage*CHUNKS_PER_HUGE_PAGE_2M*LBA_PER_CHUNK+chunk*LBA_PER_CHUNK;
-            qpair.submit_io(&mut buffer[swap_buffer_idx].slice(0..CHUNK_SIZE), lba[swap_buffer_idx] as u64, false);
-            qpair.complete_io(1);
+            let (cur_lba, cur_offset) = calculate_lba_offset(idx as usize, task.start_lba, task.offset);
+            lba[swap_buffer_idx] = cur_lba;
+            read_write_elements(qpair, &mut buffer[swap_buffer_idx], lba[swap_buffer_idx], cur_offset, BLOCKSIZE, false);
 
             // read block into swap buffer
-            swap_buffer[swap_buffer_idx].copy_from_slice(&buffer[swap_buffer_idx][block*BLOCKSIZE*8..(block+1)*BLOCKSIZE*8]);
+            swap_buffer[swap_buffer_idx].copy_from_slice(&buffer[swap_buffer_idx][cur_offset*8..(cur_offset+BLOCKSIZE)*8]);
 
-            info!("Read lba {} into swap buffer {}: {:?}", lba[swap_buffer_idx], swap_buffer_idx, u8_to_u64_slice(&mut swap_buffer[swap_buffer_idx]));
+            debug!("Read lba {} into swap buffer {}: {:?}", lba[swap_buffer_idx], swap_buffer_idx, u8_to_u64_slice(&mut swap_buffer[swap_buffer_idx]));
 
             'inner: loop {
                 let first_element = u8_to_u64(&swap_buffer[swap_buffer_idx][0..8]);
                 let mut bdest = find_bucket_ips2ra(first_element, task.level) as u64;
                 let mut wdest = &mut self.pointers[bdest as usize].0;
                 let mut rdest = &mut self.pointers[bdest as usize].1;
-                info!("First element: {}, Bucket: {}, Write: {}, Read: {}", first_element, bdest, wdest, rdest);
+                debug!("First element: {}, Bucket: {}, Write: {}, Read: {}", first_element, bdest, wdest, rdest);
 
                 // increment wdest pointers
                 *wdest += BLOCKSIZE as i64;
@@ -182,47 +188,46 @@ impl IPS2RaSorter {
                 // read block into second swap buffer
                 let next_swap_buffer_idx = (swap_buffer_idx + 1) % 2;
                 let next_idx = *wdest as usize - BLOCKSIZE;
-                let (next_hugepage, next_chunk, next_block) = calculate_hugepage_chunk_block(next_idx);
+
+                let (next_lba, next_offset) = calculate_lba_offset(next_idx, task.start_lba, task.offset);
+                //let (next_hugepage, next_chunk, next_block) = calculate_hugepage_chunk_block(next_idx);
 
                 // read chunk
-                lba[next_swap_buffer_idx] = next_hugepage*CHUNKS_PER_HUGE_PAGE_2M*LBA_PER_CHUNK+next_chunk*LBA_PER_CHUNK;
-                qpair.submit_io(&mut buffer[next_swap_buffer_idx].slice(0..CHUNK_SIZE), lba[next_swap_buffer_idx] as u64, false);
-                qpair.complete_io(1);
-
+                lba[next_swap_buffer_idx] = next_lba; // next_hugepage*CHUNKS_PER_HUGE_PAGE_2M*LBA_PER_CHUNK+next_chunk*LBA_PER_CHUNK
+                read_write_elements(qpair, &mut buffer[next_swap_buffer_idx], lba[next_swap_buffer_idx], next_offset, BLOCKSIZE, false);
 
                 if *wdest-BLOCKSIZE as i64 <= *rdest {
                     // copy to new swap buffer
-                    swap_buffer[next_swap_buffer_idx].copy_from_slice(&buffer[next_swap_buffer_idx][next_block*BLOCKSIZE*8..(next_block+1)*BLOCKSIZE*8]);
+                    swap_buffer[next_swap_buffer_idx].copy_from_slice(&buffer[next_swap_buffer_idx][next_offset*8..(next_offset+BLOCKSIZE)*8]);
                     // overwrite with old swap buffer
-                    buffer[next_swap_buffer_idx][next_block*BLOCKSIZE*8..(next_block+1)*BLOCKSIZE*8].copy_from_slice(&swap_buffer[swap_buffer_idx]);
+                    buffer[next_swap_buffer_idx][next_offset*8..(next_offset+BLOCKSIZE)*8].copy_from_slice(&swap_buffer[swap_buffer_idx]);
 
                     // write back to disk
-                    info!("writing {:?} to lba {}", u8_to_u64_slice(&mut swap_buffer[swap_buffer_idx]), lba[next_swap_buffer_idx]);
-                    qpair.submit_io(&mut buffer[next_swap_buffer_idx].slice(0..CHUNK_SIZE), lba[next_swap_buffer_idx] as u64, true);
-                    qpair.complete_io(1);
+                    debug!("writing {:?} to lba {}", u8_to_u64_slice(&mut swap_buffer[swap_buffer_idx]), lba[next_swap_buffer_idx]);
+                    read_write_elements(qpair, &mut buffer[next_swap_buffer_idx], lba[next_swap_buffer_idx], next_offset, BLOCKSIZE, true);
 
                     swap_buffer_idx = next_swap_buffer_idx;
                 } else {
                     if *wdest > task.size as i64 {
                         // write to overflow buffer
-                        info!("Write to overflow buffer - wdest: {}, tasklen: {}", wdest, task.size);
+                        debug!("Write to overflow buffer - wdest: {}, tasklen: {}", wdest, task.size);
 
                         // TODO: debug, remove later
                         assert_eq!(bdest, crate::permutation::compute_overflow_bucket(&self.element_counts) as u64, "Overflow bucket not correct");
 
                         // TODO: do better
                         let mut overflow_slice = u8_to_u64_slice(&mut swap_buffer[swap_buffer_idx]);
-                        info!("Writing Overflow Buffer: {:?}", overflow_slice);
+                        debug!("Writing Overflow Buffer: {:?}", overflow_slice);
                         self.overflow_buffer.append(&mut overflow_slice.to_vec());
                         self.overflow = true;
                         break 'inner;
                     }
 
                     // write swap buffer to new chunk
-                    info!("break writing {:?} to lba {}", u8_to_u64_slice(&mut swap_buffer[swap_buffer_idx]), lba[next_swap_buffer_idx]);
-                    buffer[next_swap_buffer_idx][next_block*BLOCKSIZE*8..(next_block+1)*BLOCKSIZE*8].copy_from_slice(&swap_buffer[swap_buffer_idx]);
-                    qpair.submit_io(&mut buffer[next_swap_buffer_idx].slice(0..CHUNK_SIZE), lba[next_swap_buffer_idx] as u64, true);
-                    qpair.complete_io(1);
+                    debug!("break writing {:?} to lba {}", u8_to_u64_slice(&mut swap_buffer[swap_buffer_idx]), lba[next_swap_buffer_idx]);
+
+                    buffer[next_swap_buffer_idx][next_offset*8..(next_offset+BLOCKSIZE)*8].copy_from_slice(&swap_buffer[swap_buffer_idx]);
+                    read_write_elements(qpair, &mut buffer[next_swap_buffer_idx], lba[next_swap_buffer_idx], next_offset, BLOCKSIZE, true);
 
                     break 'inner;
                 }
@@ -240,6 +245,36 @@ pub fn compute_overflow_bucket(element_count: &[u64]) -> u64 {
     }
     return 0;
 }
+
+/*pub fn calculate_hugepage_chunk_block(input: usize) -> (usize, usize, usize) {
+    let elements_per_hugepage = HUGE_PAGE_SIZE_2M / 8;
+    let hugepage = input / elements_per_hugepage;
+    let chunk_tmp = input % elements_per_hugepage;
+    let chunk = chunk_tmp / (CHUNK_SIZE/8);
+    let block = (chunk_tmp % (CHUNK_SIZE/8)) / BLOCKSIZE;
+
+    (hugepage, chunk, block)
+}*/
+
+// read num_elements elements from target_lba (+target_offset elements) to buffer. Wait for completion.
+fn read_write_elements(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, target_lba: usize, target_offset: usize, num_elements: usize, write: bool) {
+    let num_lba = (target_offset*8 + num_elements*8 + LBA_SIZE - 1) / LBA_SIZE;
+    debug!("Reading {} elements (=> {} lbas) from lba {} with offset {} to buffer", num_elements, num_lba, target_lba, target_offset);
+    let tmp = qpair.submit_io(&mut buffer.slice(0..num_lba*LBA_SIZE), target_lba as u64, write);
+    qpair.complete_io(tmp);
+    debug!("Read: {:?}", u8_to_u64_slice(&mut buffer[0..num_lba*LBA_SIZE]));
+}
+
+// TODO: include offset from task
+pub fn calculate_lba_offset(index: usize, start_lba: usize, task_offset: usize) -> (usize, usize){
+    let lba = index*8/LBA_SIZE + start_lba;
+    let offset = index % BLOCKSIZE + task_offset;
+
+    debug!("Index: {}, LBA: {}, Offset: {}", index, lba, offset);
+
+    (lba, offset)
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -262,7 +297,7 @@ mod tests {
 
         //permutate_blocks(&mut input, &decision_tree, classified_elements, &element_count, &mut pointers, &mut boundaries, &mut overflow_buffer, 0, length);
 
-        //info!("Pointers: {:?}", pointers);
+        //debug!("Pointers: {:?}", pointers);
         let expected_pointers = [(8, -4), (16, 12), (20, 16), (28, 20), (32, 28), (52, 48), (64, 48), (64, 48)];
         for i in 0..K {
             assert_eq!(pointers[i], expected_pointers[i]);
@@ -271,12 +306,3 @@ mod tests {
 
 }
 
-pub fn calculate_hugepage_chunk_block(input: usize) -> (usize, usize, usize) {
-    let elements_per_hugepage = HUGE_PAGE_SIZE_2M / 8;
-    let hugepage = input / elements_per_hugepage;
-    let chunk_tmp = input % elements_per_hugepage;
-    let chunk = chunk_tmp / (CHUNK_SIZE/8);
-    let block = (chunk_tmp % (CHUNK_SIZE/8)) / BLOCKSIZE;
-
-    (hugepage, chunk, block)
-}

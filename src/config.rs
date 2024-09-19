@@ -6,9 +6,9 @@ pub const NUM_THREADS: usize = 8;
 // DMA:
 pub const LBA_SIZE: usize = 512; // Logical Block Addressing Size of SSD (usually 512)
 pub const CHUNK_SIZE: usize = 2*4096; // Number of bytes that can be read/written with a single SQE
-pub const HUGE_PAGES_2M: usize = 64; // Number of 2 MiB hugepages allocated in main memory (-> Setup script)
+pub const HUGE_PAGES_2M: usize = 256; // Number of 2 MiB hugepages allocated in main memory (-> Setup script)
 pub const HUGE_PAGES_1G: usize = 4; // Number of 1 GiB hugepages allocated in main memory (-> Setup script)
-pub const HUGE_PAGE_SIZE_2M: usize = 2 * 4 * 1024; // Number of bytes per 2M hugepage
+pub const HUGE_PAGE_SIZE_2M: usize = 2 * 1024 * 1024; // Number of bytes per 2M hugepage
 pub const HUGE_PAGE_SIZE_1G: usize = 1024 * 1024 * 1024; // Number of bytes per 1G hugepage
 pub const CHUNKS_PER_HUGE_PAGE_2M: usize = HUGE_PAGE_SIZE_2M / CHUNK_SIZE;
 pub const CHUNKS_PER_HUGE_PAGE_1G: usize = HUGE_PAGE_SIZE_1G / CHUNK_SIZE;

@@ -20,7 +20,7 @@ pub fn u8_to_u64_slice(bytes: &mut [u8]) -> &mut [u64] {
 }
 
 pub fn u8_to_u64(bytes: &[u8]) -> u64 {
-    assert_eq!(bytes.len(), 8, "Buffer size must be 8 bytes");
+    assert_eq!(bytes.len(), 8, "Buffer size must be 8 bytes ");
 
     let array: [u8; 8] = bytes.try_into().expect("slice with incorrect length");
     u64::from_le_bytes(array)

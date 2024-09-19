@@ -78,6 +78,7 @@ pub struct IPS2RaSorter {
     // DMA
     pub qpair: Option<NvmeQueuePair>,
     pub buffers: Option<Vec<Dma<u8>>>,
+    pub sort_buffer: Option<Dma<u8>>
 
 }
 impl IPS2RaSorter {
@@ -95,6 +96,7 @@ impl IPS2RaSorter {
             parallel: false,
             qpair: None,
             buffers: None,
+            sort_buffer: None,
         })
     }
 
@@ -124,10 +126,11 @@ impl IPS2RaSorter {
             parallel: true,
             qpair: None,
             buffers: None,
+            sort_buffer: None,
         })
     }
 
-    pub fn new_ext_sequential(qpair: NvmeQueuePair, buffers: Vec<Dma<u8>>) -> Box<Self> {
+    pub fn new_ext_sequential(qpair: NvmeQueuePair, buffers: Vec<Dma<u8>>, sort_buffer: Dma<u8>) -> Box<Self> {
         Box::new(Self {
             classified_elements: 0,
             pointers: [(0, 0); K],
@@ -141,6 +144,7 @@ impl IPS2RaSorter {
             parallel: false,
             qpair: Some(qpair),
             buffers: Some(buffers),
+            sort_buffer: Some(sort_buffer),
         })
     }
 
