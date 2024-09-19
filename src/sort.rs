@@ -13,7 +13,7 @@ use rand::SeedableRng;
 use vroom::memory::{Dma, DmaSlice};
 use vroom::{NvmeDevice, NvmeQueuePair, QUEUE_LENGTH};
 use crate::conversion::u8_to_u64_slice;
-use crate::HUGE_PAGE_SIZE_2M;
+use crate::{HUGE_PAGES_2M, HUGE_PAGE_SIZE_2M};
 use crate::sort_merge::sequential_sort_merge;
 
 pub fn sort(arr: &mut [u64]) {
@@ -49,7 +49,7 @@ pub fn rolling_sort(mut nvme: NvmeDevice, len: usize, parallel: bool) -> Result<
         let mut sort_buffer = Dma::allocate(HUGE_PAGE_SIZE_1G)?;
 
         let mut buffers: Vec<Dma<u8>> = Vec::new();
-        for _ in 0..HUGE_PAGE_SIZE_2M {
+        for _ in 0..HUGE_PAGES_2M {
             buffers.push(Dma::allocate(HUGE_PAGE_SIZE_2M)?);
         }
 

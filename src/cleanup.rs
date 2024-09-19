@@ -289,6 +289,7 @@ impl IPS2RaSorter {
                 // fill the back
                 to_write = sum as usize - write_ptr as usize;
                 if to_write > 0 {
+                    assert!(to_write <= BLOCKSIZE);
                     // read from ssd
                     let (start_lba, start_offset) = calculate_lba_offset(write_ptr as usize, task.start_lba, task.offset);
                     read_write_elements(&mut qpair, &mut buffer[0], start_lba, write_ptr as usize % BLOCKSIZE + start_offset, to_write, false);
