@@ -1,5 +1,6 @@
 use std::collections::BinaryHeap;
 use std::io;
+use std::time::Duration;
 use log::{debug, info};
 use vroom::memory::Dma;
 use vroom::NvmeQueuePair;
@@ -47,6 +48,8 @@ pub fn merge_sequential(qpair: &mut NvmeQueuePair, len: usize, buffer: &mut Vec<
     let mut write_offset = total_number_hugepages;
     let mut last_write_offset = write_offset;
 
+    let mut timeForIO= Duration::new(0,0);
+
     let max = (total_number_hugepages as f64).log((HUGE_PAGES_1G - 1) as f64).ceil() as usize;
     info!("Total number of hugepages: {total_number_hugepages}, max runs: {max}");
 
@@ -60,13 +63,17 @@ pub fn merge_sequential(qpair: &mut NvmeQueuePair, len: usize, buffer: &mut Vec<
             let mut write_idx = 0;
             let mut written_hugepages = 0;
             let mut hugepage_increments = [0; HUGE_PAGES_1G - 1];
-            let mut min_heap = BinaryHeap::new();
+            let mut min_heap = BinaryHeap::with_capacity(HUGE_PAGES_1G - 1);
 
             // Load first HUGE_PAGES-1 hugepages and push first elements to heap
             for k in 0..HUGE_PAGES_1G - 1 {
                 info!("Initial read: hugepage: {} (offset: {}), index: {k}", j*result_length + k*input_length + read_offset, read_offset);
 
+                let start = std::time::Instant::now();
                 read_write_hugepage(qpair, (j*result_length + k*input_length + read_offset) * LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE_1G, &mut buffer[k], false);
+                let duration = start.elapsed();
+                timeForIO+=duration;
+
                 info!("Hugepeage read: {:?}", u8_to_u64_slice(&mut buffer[k][0..HUGE_PAGE_SIZE_1G]));
 
                 { // scope to avoid borrowing issues
@@ -114,7 +121,12 @@ pub fn merge_sequential(qpair: &mut NvmeQueuePair, len: usize, buffer: &mut Vec<
                 // If the output buffer is full, write to SSD and reset index
                 if write_idx % (HUGE_PAGE_SIZE_1G / 8) == 0 {
                     info!("Output buffer full, writing to SSD hugepage {} (written hugepages: {written_hugepages}):", j * result_length + write_offset + written_hugepages);
+
+                    let start = std::time::Instant::now();
                     read_write_hugepage(qpair, (j * result_length + write_offset + written_hugepages)*LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE_1G, output_buffer, true);
+                    let duration = start.elapsed();
+                    timeForIO+=duration;
+
                     info!("Hugepage written: {:?}", u8_to_u64_slice(&mut output_buffer[0..HUGE_PAGE_SIZE_1G]));
                     write_idx = 0;
                     written_hugepages += 1;
@@ -154,7 +166,12 @@ pub fn merge_sequential(qpair: &mut NvmeQueuePair, len: usize, buffer: &mut Vec<
 
                         info!("Index: {}, Reading hugepage {} (offset: {})", hugepage_idx, j * result_length + hugepage_idx*input_length + hugepage_increments[hugepage_idx] + read_offset, read_offset);
                         // Read the next hugepage into the buffer
+
+                        let start = std::time::Instant::now();
                         read_write_hugepage(qpair, (j * result_length + hugepage_idx*input_length + hugepage_increments[hugepage_idx] + read_offset)*LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE_1G, &mut buffer[hugepage_idx], false);
+                        let duration = start.elapsed();
+                        timeForIO+=duration;
+
                         info!("Hugepeage read: {:?}", u8_to_u64_slice(&mut buffer[hugepage_idx][0..HUGE_PAGE_SIZE_1G]));
 
                         let next_value = {
@@ -193,7 +210,9 @@ pub fn merge_sequential(qpair: &mut NvmeQueuePair, len: usize, buffer: &mut Vec<
 
             if write_idx > 0 {
                 info!("Output buffer not empty at end, writing {} elements to SSD hugepage {} (written hugepages: {written_hugepages}):", write_idx, j * result_length + write_offset + written_hugepages);
+                let start = std::time::Instant::now();
                 read_write_hugepage(qpair, (j * result_length + write_offset + written_hugepages)*LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE_1G, output_buffer, true);
+                let duration = start.elapsed();
                 info!("Hugepage written: {:?}", u8_to_u64_slice(&mut output_buffer[0..HUGE_PAGE_SIZE_1G]));
                 write_idx = 0;
                 written_hugepages += 1;
@@ -221,6 +240,7 @@ pub fn merge_sequential(qpair: &mut NvmeQueuePair, len: usize, buffer: &mut Vec<
     } else {
         println!("Merge: No Copy needed!");
     }
+    println!("Time for IO: {:?}", timeForIO);
 }
 
 #[cfg(test)]

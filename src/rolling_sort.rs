@@ -1,9 +1,6 @@
-use std::error::Error;
-use log::info;
-use vroom::memory::Dma;
-use vroom::{NvmeDevice, QUEUE_LENGTH};
-use crate::{read_write_hugepage, u8_to_u64_slice, HUGE_PAGE_SIZE_1G, HUGE_PAGE_SIZE_2M, K, LBA_SIZE, THRESHOLD};
+use crate::config::{HUGE_PAGE_SIZE_1G, K, LBA_SIZE};
 use crate::sorter::{DMATask, IPS2RaSorter, Task};
+use crate::{read_write_hugepage, u8_to_u64_slice, };
 
 impl IPS2RaSorter{
     pub fn sequential_rolling_sort(&mut self, task: &mut DMATask) {

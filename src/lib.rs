@@ -1,4 +1,3 @@
-#![feature(thread_spawn_unchecked)]
 extern crate core;
 
 pub mod sort;

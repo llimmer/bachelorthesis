@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize};
 use std::{io, thread};
 use log::{debug, error, info};
-use crate::config::{BLOCKSIZE, CHUNKS_PER_HUGE_PAGE_1G, CHUNK_SIZE, HUGE_PAGES_1G, HUGE_PAGE_SIZE_1G, K, LBA_PER_CHUNK, NUM_THREADS, THRESHOLD};
+use crate::config::{BLOCKSIZE, CHUNKS_PER_HUGE_PAGE_1G, CHUNK_SIZE, HUGE_PAGES_1G, HUGE_PAGE_SIZE_1G, K, LBA_PER_CHUNK, NUM_THREADS, THRESHOLD, HUGE_PAGES_2M, HUGE_PAGE_SIZE_2M};
 use crate::parallel::process_task;
 use crate::sorter::{DMATask, IPS2RaSorter, Task};
 use crate::setup::{clear_chunks, setup_array};
@@ -13,7 +13,6 @@ use rand::SeedableRng;
 use vroom::memory::{Dma, DmaSlice};
 use vroom::{NvmeDevice, NvmeQueuePair, QUEUE_LENGTH};
 use crate::conversion::u8_to_u64_slice;
-use crate::{HUGE_PAGES_2M, HUGE_PAGE_SIZE_2M};
 use crate::sort_merge::sequential_sort_merge;
 
 pub fn sort(arr: &mut [u64]) {

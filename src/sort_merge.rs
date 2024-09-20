@@ -19,9 +19,12 @@ pub fn sequential_sort_merge(mut nvme: NvmeDevice, len: usize) -> Result<NvmeDev
     let mut sorter = IPS2RaSorter::new_sequential();
 
     let mut remaining = len;
+    println!("Starting sorting:");
+    let mut sort_times = Vec::new();
     for i in 0..((len + HUGE_PAGE_SIZE_1G / 8 - 1) / (HUGE_PAGE_SIZE_1G / 8)) {
         // read hugepage from ssd
         println!("Reading hugepage {i}");
+        let start = std::time::Instant::now();
         read_write_hugepage(&mut qpair, i * LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G, &mut sort_buffer, false);
 
         println!("Done");
@@ -49,12 +52,20 @@ pub fn sequential_sort_merge(mut nvme: NvmeDevice, len: usize) -> Result<NvmeDev
         read_write_hugepage(&mut qpair, i * LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G, &mut sort_buffer, true);
         println!("Done");
 
+        sorter.clear();
+        let duration = start.elapsed();
+        println!("Time elapsed in sorting hugepage {i} is: {:?}", duration);
+        sort_times.push(duration);
     }
 
+    println!("Total time elapsed in sorting is: {:?}", sort_times.iter().sum::<std::time::Duration>());
     println!("Starting merge");
+    let start = std::time::Instant::now();
     merge_sequential(&mut qpair, len, &mut buffers, &mut sort_buffer);
-    println!("Done");
+    let duration = start.elapsed();
+    println!("Time elapsed in merging is: {:?}", duration);
 
+    println!("Total time elapsed in sorting and merging is: {:?}", sort_times.iter().sum::<std::time::Duration>() + duration);
     Ok(nvme)
 }
 

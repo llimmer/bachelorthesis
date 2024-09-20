@@ -1,5 +1,3 @@
-#![feature(thread_spawn_unchecked)]
-
 use log::LevelFilter;
 use log::{debug, info, warn, error};
 use rand::prelude::SliceRandom;
@@ -49,6 +47,31 @@ fn main() -> Result<(), Box<dyn Error>>{
     env_logger::builder()
         .filter_level(LevelFilter::Error)
         .init();
+
+    println!("Hello, world!");
+
+    let mut data: Vec<u64> = (0..134217728*4).collect();
+    let mut rng = StdRng::seed_from_u64(12345);
+    let mut sorter = IPS2RaSorter::new_sequential();
+
+    for i in 0..10000 {
+        println!("\ni = {}", i);
+        data.shuffle(&mut rng);
+        let mut data_copy = data.clone();
+
+        let start = Instant::now();
+        let mut task = Task::new(&mut data, 0);
+        task.sample();
+        sorter.sort_sequential(&mut task);
+        sorter.clear();
+        let duration = start.elapsed();
+        println!("Time elapsed in sorting hugepage {i} is: {:?}", duration);
+
+        let start = Instant::now();
+        data_copy.sort_unstable();
+        let duration = start.elapsed();
+        println!("Time elapsed in quicksorting hugepage {i} is: {:?}", duration);
+    }
 
     /*let mut nvme = vroom::init("0000:00:04.0")?;
     let mut qpair = nvme.create_io_queue_pair(QUEUE_LENGTH)?;

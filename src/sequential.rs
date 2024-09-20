@@ -4,7 +4,7 @@ use crate::insertion_sort;
 use crate::sorter::{IPS2RaSorter, Task};
 
 impl IPS2RaSorter {
-    pub(crate) fn sort_sequential(&mut self, task: &mut Task) {
+    pub fn sort_sequential(&mut self, task: &mut Task) {
         if task.arr.len() as i64 <= THRESHOLD as i64 {
             debug!("Base case: {:?}", task.arr);
             insertion_sort(task.arr);
