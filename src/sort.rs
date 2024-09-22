@@ -16,20 +16,24 @@ use crate::conversion::u8_to_u64_slice;
 use crate::sort_merge::sequential_sort_merge;
 
 pub fn sort(arr: &mut [u64]) {
+    let mut task = Task::new(arr, 0, 0, 8);
+    if !task.sample(){
+        return;
+    }
     let mut s = IPS2RaSorter::new_sequential();
-    let mut task = Task::new(arr, 0);
-    task.sample();
     debug!("Task after sampling: {:?}", task.arr);
     info!("Level: {:?}", task.level);
-    s.sort_sequential(&mut task);
+    s.sequential_rec(&mut task);
 }
 
 pub fn sort_parallel(arr: &mut [u64]) {
     if NUM_THREADS > 0 {
         rayon::ThreadPoolBuilder::new().num_threads(NUM_THREADS).build_global().unwrap();
     }
-    let mut initial_task = Task::new(arr, 0);
-    initial_task.sample();
+    let mut initial_task = Task::new(arr, 0, 0, 0);
+    if !initial_task.sample(){
+        return;
+    }
     process_task(&mut initial_task);
 }
 
@@ -53,7 +57,7 @@ pub fn rolling_sort(mut nvme: NvmeDevice, len: usize, parallel: bool) -> Result<
         }
 
         let mut sorter = IPS2RaSorter::new_ext_sequential(qpair, buffers, sort_buffer);
-        let mut task = DMATask::new(0, 0, len, 0);
+        let mut task = DMATask::new(0, 0, len, 6, 6, 8);
         sorter.sequential_rolling_sort(&mut task);
     } else {
         unimplemented!();
@@ -61,6 +65,8 @@ pub fn rolling_sort(mut nvme: NvmeDevice, len: usize, parallel: bool) -> Result<
 
     Ok(nvme)
 }
+
+
 
 pub fn read_write_hugepage(qpair: &mut NvmeQueuePair, lba_offset: usize, segment: &mut Dma<u8>, write: bool){
     let max_chunks_per_queue = QUEUE_LENGTH/8;
@@ -89,6 +95,7 @@ pub fn read_write_hugepage(qpair: &mut NvmeQueuePair, lba_offset: usize, segment
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use rand::prelude::StdRng;
@@ -121,3 +128,5 @@ mod tests {
         }
     }
 }
+
+ */

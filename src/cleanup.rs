@@ -1,328 +1,251 @@
 use log::{debug, info};
 use vroom::memory::{Dma, DmaSlice};
 use vroom::{NvmeQueuePair, QUEUE_LENGTH};
-use crate::config::{BLOCKSIZE, K, LBA_PER_CHUNK, LBA_SIZE};
+use crate::config::{BLOCKSIZE, K, LBA_PER_CHUNK, LBA_SIZE, THRESHOLD};
 use crate::conversion::{u64_to_u8_slice, u8_to_u64_slice};
-use crate::permutation::{compute_overflow_bucket};
 use crate::sorter::{DMATask, IPS2RaSorter, Task};
+use crate::{insertion_sort};
 
 impl IPS2RaSorter {
-    #[inline(never)]
+
     pub fn cleanup(&mut self, task: &mut Task) {
-        debug!("Starting cleanup");
-        let mut sum = 0;
-        let overflow_bucket = compute_overflow_bucket(&self.element_counts) as usize;
+        let first_bucket = 0;
+        let last_bucket = K;
 
-        for i in 0..K {
-            debug!("\n\ni = {}:", i);
-            // dst = start of bucket
-            let mut dst = sum as usize;
+        let swap_bucket: i64 = -1;
+        let in_swap_buffer = 0;
+        let overflow_bucket = Self::compute_overflow_bucket(&self.boundaries);
 
-            let write_ptr = self.pointers[i].0;
-            sum += self.element_counts[i];
+        let is_last_level = task.level+1 == task.level_end;
 
-            if self.overflow && i == overflow_bucket {
-                let mut tailsize = sum as usize + BLOCKSIZE - write_ptr as usize;
-                assert_eq!(self.overflow_buffer.len(), BLOCKSIZE);
-                let to_write: usize = BLOCKSIZE + self.block_counts[i];
+        for i in first_bucket..last_bucket {
+            let bstart = self.boundaries[i];
+            let bend = self.boundaries[i + 1];
+            let bwrite = self.pointers[i].0;
 
-                debug!("Overflow: tailsize = {}, to_write = {}", tailsize, to_write);
+            let mut dst = bstart as usize;
+            let mut remaining = Self::align_to_next_block(bstart as usize) - bstart as usize;
 
-                // case overflowbuffer > frontspace
-                let mut to_write_front = to_write - tailsize;
-                if to_write_front < BLOCKSIZE {
-                    debug!("Overflow: to_write_front: {} < BLOCKSIZE: {}", to_write_front, BLOCKSIZE);
-                    // fill front
-                    debug!("Copying {to_write_front} elements from overflow_buffer[..{to_write_front}] to {dst}");
-                    debug!("Src: -> {:?}", &self.overflow_buffer[..to_write_front]);
-                    let target_slice = &mut task.arr[dst..dst + to_write_front];
-                    target_slice.copy_from_slice(&self.overflow_buffer[..to_write_front]);
-                    dst = sum as usize - tailsize;
+            debug!("i={}: bstart: {}, bend: {}, bwrite: {}, dst: {}, remaining: {}", i, bstart, bend, bwrite, dst, remaining);
 
-                    // fill back
-                    let overflow_back = BLOCKSIZE - to_write_front;
-                    debug!("Copying {overflow_back} elements from overflow_buffer[{to_write_front}..] to {dst}");
-                    debug!("Src: -> {:?}", &self.overflow_buffer[to_write_front..]);
-                    let target_slice = &mut task.arr[dst..dst + overflow_back];
-                    target_slice.copy_from_slice(&self.overflow_buffer[to_write_front..]);
-                    dst += overflow_back;
-                    tailsize -= overflow_back;
+            if i == overflow_bucket && self.overflow {
+                debug!("Overflow bucket");
+                let tail_size = BLOCKSIZE - remaining;
+                let mut src = 0;
+                // head
+                task.arr[dst..dst + remaining].copy_from_slice(&self.overflow_buffer[src..src + remaining]);
+                src += remaining;
 
-                    // fill back with blocks
-                    debug!("Copying {tailsize} elements from block {i} to {dst}");
-                    debug!("Src: -> {:?}", &self.blocks[i][0..self.block_counts[i]]);
-                    let target_slice = &mut task.arr[dst..dst + tailsize];
-                    target_slice.copy_from_slice(&self.blocks[i][0..self.block_counts[i]]);
-                } else { // case overflowbuffer <= frontspace
-                    debug!("Overflow: to_write_front: {} >= BLOCKSIZE: {}", to_write_front, BLOCKSIZE);
-                    // fill front
-                    debug!("Copying {BLOCKSIZE} elements from overflow_buffer[..] to {dst}");
-                    debug!("Src: -> {:?}", &self.overflow_buffer[..]);
-                    let target_slice = &mut task.arr[dst..dst + BLOCKSIZE];
-                    target_slice.copy_from_slice(&self.overflow_buffer[..]);
-                    dst += BLOCKSIZE;
-                    to_write_front -= BLOCKSIZE;
+                remaining = usize::MAX;
 
-                    // fill front with blocks
-                    debug!("Copying {to_write_front} elements from block {i} to {dst}");
-                    debug!("Src: -> {:?}", &self.blocks[i][..to_write_front]);
-                    let target_slice = &mut task.arr[dst..dst + to_write_front];
-                    target_slice.copy_from_slice(&self.blocks[i][..to_write_front]);
-                    dst = sum as usize - tailsize;
+                dst = bwrite as usize - BLOCKSIZE;
+                task.arr[dst..dst + tail_size].copy_from_slice(&self.overflow_buffer[src..src + tail_size]);
+                dst += tail_size;
 
-                    // fill back with blocks
-                    debug!("Copying {tailsize} elements from block {i} to {dst}");
-                    debug!("Src: -> {:?}", &self.blocks[i][to_write_front..]);
-                    let target_slice = &mut task.arr[dst..dst + tailsize];
-                    target_slice.copy_from_slice(&self.blocks[i][to_write_front..]);
+                // overflow -> reset //TODO: check what this does exactly
+            } else if i as i64 == swap_bucket && in_swap_buffer != 0 {
+                // only relevant for parallel version
+                unimplemented!();
+            } else if bwrite > bend as i64 && bend - bstart > BLOCKSIZE as u64 {
+                debug!("bwrite ({}) > bend ({}) && bend - bstart ({}) > BLOCKSIZE", bwrite, bend, bend - bstart);
+                let mut src = bend as usize;
+                let mut head_size = bwrite as usize - bend as usize;
+
+                debug!("Copying {:?} to {:?}", &task.arr[src..src+head_size], &task.arr[dst..dst+head_size]);
+
+                //task.arr[dst..dst + head_size].copy_from_slice(&task.arr[src..src + head_size]);
+                for i in 0..head_size {
+                    task.arr[dst + i] = task.arr[src + i];
                 }
-                continue;
+
+                dst += head_size;
+                remaining -= head_size;
             }
 
-            let mut to_write: usize = 0;
+            // write elements from buffers
+            let mut src = 0;
+            let mut count = self.block_counts[i];
 
-            if write_ptr <= self.boundaries[i] as i64 || write_ptr as usize > task.arr.len() {
-                debug!("write ptr: {write_ptr} <= boundaries: {} or write ptr: {write_ptr} > task.size: {} --> skip", self.boundaries[i], task.arr.len());
-                // do nothing
-            }
-            // write ptr > sum => (write ptr-sum) elements overwrite to right
-            // TODO: check if i!=K-1 is necessary
-            else if write_ptr > sum as i64 && i != K - 1 {
-                debug!("write ptr: {write_ptr} > sum: {sum} => (write ptr-sum): {} elements overwrite to right", write_ptr as u64 - sum);
-                // read elements and write to correct position
-                // TODO: check if possible with slice copy
-                debug!("Copying {} elements from {sum} to {dst}", write_ptr as u64 - sum);
-                debug!("Src: -> {:?}", &task.arr[sum as usize..sum as usize + (write_ptr as u64 - sum) as usize]);
-                debug!("Dst: -> {:?}", &task.arr[dst..dst + (write_ptr as u64 - sum) as usize]);
-                for j in 0..((write_ptr as u64 - sum) as usize) {
-                    let element = task.arr[sum as usize + j];
-                    task.arr[dst] = element;
-                    dst += 1;
+            if count <= remaining {
+                if count > 0 {
+                    debug!("Copying blocks[{i}][{}..{}] to {:?}", src, src+count, &task.arr[dst..dst + count]);
+                    task.arr[dst..dst + count].copy_from_slice(&self.blocks[i][src..src + count]);
                 }
+                dst += count;
+                remaining -= count;
             } else {
-                debug!("write ptr: {write_ptr} <= sum: {sum}");
-                // fill the back
-                to_write = sum as usize - write_ptr as usize;
-                if to_write > 0 {
-                    debug!("Copying {to_write} elements from block {i} to {write_ptr}");
-                    debug!("Src: -> {:?}", &self.blocks[i][..to_write]);
-                    debug!("Dst: -> {:?}", &task.arr[write_ptr as usize..sum as usize]);
-                    let target_slice = &mut task.arr[write_ptr as usize..sum as usize];
-                    target_slice.copy_from_slice(&self.blocks[i][..to_write]);
+                if remaining > 0{
+                    debug!("Copying blocks[{i}][{}..{}] to {:?}", src, src+count, &task.arr[dst..dst + remaining]);
+                    task.arr[dst..dst + remaining].copy_from_slice(&self.blocks[i][src..src + remaining]);
                 }
+
+                src += remaining;
+                count -= remaining;
+                remaining = usize::MAX;
+
+                dst = bwrite as usize;
+                if count > 0 {
+                    debug!("Copying blocks[{i}][{}..{}] to {:?}", src, src+count, &task.arr[dst..dst + count]);
+                    task.arr[dst..dst + count].copy_from_slice(&self.blocks[i][src..src + count]);
+                }
+                dst += count;
             }
 
-            // fill the front with remaining elements from blocks buffer
-            let remaining = self.block_counts[i] - to_write;
-            if remaining > 0 {
-                debug!("Copying {remaining} elements from block {i} to {dst}");
-                debug!("Src: -> {:?}", &self.blocks[i][to_write..self.block_counts[i]]);
-                debug!("Dst: -> {:?}", &task.arr[dst..dst + remaining]);
-                let target_slice = &mut task.arr[dst..dst + remaining];
-                target_slice.copy_from_slice(&self.blocks[i][to_write..self.block_counts[i]]);
+            self.block_counts[i] = 0;
+            if !is_last_level {
+                if bend-bstart <= THRESHOLD as u64{
+                    insertion_sort(&mut task.arr[bstart as usize..bend as usize]);
+                }
             }
         }
+
     }
 
-    pub fn cleanup_ext(&mut self, task: &mut DMATask) {
-        debug!("Starting external cleanup");
-        let mut sum = 0;
-        let overflow_bucket = compute_overflow_bucket(&self.element_counts) as usize;
-
-        assert!(self.qpair.is_some());
-        assert!(self.buffers.is_some());
-
-        let mut qpair = self.qpair.as_mut().unwrap();
-        let mut buffer = self.buffers.as_mut().unwrap();
-
-        assert!(buffer.len() > 1);
-
-        for i in 0..K {
-            debug!("\n\ni = {}:", i);
-            // dst = start of bucket
-            let mut dst = sum as usize;
-
-            let write_ptr = self.pointers[i].0;
-            sum += self.element_counts[i];
-
-            if self.overflow && i == overflow_bucket {
-                let mut tailsize = sum as usize + BLOCKSIZE - write_ptr as usize;
-                assert_eq!(self.overflow_buffer.len(), BLOCKSIZE);
-                let to_write: usize = BLOCKSIZE + self.block_counts[i];
-
-                debug!("Overflow: tailsize = {}, to_write = {}", tailsize, to_write);
-
-                // case overflowbuffer > frontspace
-                let mut to_write_front = to_write - tailsize;
-                if to_write_front < BLOCKSIZE {
-                    debug!("Overflow: to_write_front: {} < BLOCKSIZE: {}", to_write_front, BLOCKSIZE);
-                    // fill front
-                    // read from ssd
-                    let (start_lba, start_offset) = calculate_lba_offset(dst, task.start_lba, task.offset);
-                    read_write_elements(&mut qpair, &mut buffer[0], start_lba, dst % BLOCKSIZE + start_offset, to_write_front, false);
-
-                    // copy to slice
-                    debug!("Copying {to_write_front} elements from overflow_buffer[..{to_write_front}] to {dst}");
-                    let target_slice = &mut buffer[0][(dst % (LBA_SIZE / 8) + start_offset) * 8..(dst % (LBA_SIZE / 8) + start_offset + to_write_front) * 8];
-                    target_slice.copy_from_slice(u64_to_u8_slice(&mut self.overflow_buffer[..to_write_front]));
-
-                    // write back to ssd
-                    read_write_elements(&mut qpair, &mut buffer[0], start_lba, dst % BLOCKSIZE + start_offset, to_write_front, true);
-
-                    dst = sum as usize - tailsize;
-
-                    // fill back
-                    let overflow_back = BLOCKSIZE - to_write_front;
-
-                    // read from ssd
-                    let (start_lba, start_offset) = calculate_lba_offset(dst, task.start_lba, task.offset);
-                    read_write_elements(&mut qpair, &mut buffer[0], start_lba, dst % BLOCKSIZE + start_offset, overflow_back, false);
-
-                    // copy to slice
-                    debug!("Copying {overflow_back} elements from overflow_buffer[{to_write_front}..] to {dst}");
-                    let target_slice = &mut buffer[0][(dst % (LBA_SIZE / 8) + start_offset) * 8..(dst % (LBA_SIZE / 8) + start_offset + overflow_back) * 8];
-                    target_slice.copy_from_slice(u64_to_u8_slice(&mut self.overflow_buffer[to_write_front..]));
-
-                    // write back to ssd
-                    read_write_elements(&mut qpair, &mut buffer[0], start_lba, dst % BLOCKSIZE + start_offset, overflow_back, true);
-
-                    dst += overflow_back;
-                    tailsize -= overflow_back;
-
-                    // fill back with blocks
-                    // read from ssd
-                    let (start_lba, start_offset) = calculate_lba_offset(dst, task.start_lba, task.offset);
-                    read_write_elements(&mut qpair, &mut buffer[0], start_lba, dst % BLOCKSIZE + start_offset, tailsize, false);
-
-                    // copy to slice
-                    debug!("Copying {tailsize} elements from block {i} to {dst}");
-                    let target_slice = &mut buffer[0][(dst % (LBA_SIZE / 8) + start_offset) * 8..(dst % (LBA_SIZE / 8) + start_offset + tailsize) * 8];
-                    target_slice.copy_from_slice(u64_to_u8_slice(&mut self.blocks[i][0..self.block_counts[i]]));
-
-                    // write back to ssd
-                    read_write_elements(&mut qpair, &mut buffer[0], start_lba, dst % BLOCKSIZE + start_offset, tailsize, true);
-                } else { // case overflowbuffer <= frontspace
-                    debug!("Overflow: to_write_front: {} >= BLOCKSIZE: {}", to_write_front, BLOCKSIZE);
-                    // fill front
-                    // read from ssd
-                    let (start_lba, start_offset) = calculate_lba_offset(dst, task.start_lba, task.offset);
-                    read_write_elements(&mut qpair, &mut buffer[0], start_lba, dst % BLOCKSIZE + start_offset, BLOCKSIZE, false);
-
-                    // copy to slice
-                    debug!("Copying {BLOCKSIZE} elements from overflow_buffer[..] to {dst}");
-                    let target_slice = &mut buffer[0][(dst % (LBA_SIZE / 8) + start_offset) * 8..(dst % (LBA_SIZE / 8) + start_offset + BLOCKSIZE) * 8];
-                    target_slice.copy_from_slice(u64_to_u8_slice(&mut self.overflow_buffer[..]));
-
-                    // write back to ssd
-                    read_write_elements(&mut qpair, &mut buffer[0], start_lba, dst % BLOCKSIZE + start_offset, BLOCKSIZE, true);
-
-                    dst += BLOCKSIZE;
-                    to_write_front -= BLOCKSIZE;
-
-                    // fill front with blocks
-                    // read from ssd
-                    let (start_lba, start_offset) = calculate_lba_offset(dst, task.start_lba, task.offset);
-                    read_write_elements(&mut qpair, &mut buffer[0], start_lba, dst % BLOCKSIZE + start_offset, to_write_front, false);
-
-                    // copy to slice
-                    debug!("Copying {to_write_front} elements from block {i} to {dst}");
-                    let target_slice = &mut buffer[0][(dst % (LBA_SIZE / 8) + start_offset) * 8..(dst % (LBA_SIZE / 8) + start_offset + to_write_front) * 8];
-                    target_slice.copy_from_slice(u64_to_u8_slice(&mut self.blocks[i][..to_write_front]));
-
-                    // write back to ssd
-                    read_write_elements(&mut qpair, &mut buffer[0], start_lba, dst % BLOCKSIZE + start_offset, to_write_front, true);
-
-                    dst = sum as usize - tailsize;
-
-                    // fill back with blocks
-                    // read from ssd
-                    let (start_lba, start_offset) = calculate_lba_offset(dst, task.start_lba, task.offset);
-                    read_write_elements(&mut qpair, &mut buffer[0], start_lba, dst % BLOCKSIZE + start_offset, tailsize, false);
-
-                    // copy to slice
-                    debug!("Copying {tailsize} elements from block {i} to {dst}");
-                    let target_slice = &mut buffer[0][(dst % (LBA_SIZE / 8) + start_offset) * 8..(dst % (LBA_SIZE / 8) + start_offset + tailsize) * 8];
-                    target_slice.copy_from_slice(u64_to_u8_slice(&mut self.blocks[i][to_write_front..]));
-
-                    // write back to ssd
-                    read_write_elements(&mut qpair, &mut buffer[0], start_lba, dst % BLOCKSIZE + start_offset, tailsize, true);
-                }
-                continue;
+    pub fn compute_overflow_bucket(boundaries: &[u64; K+1]) -> usize {
+        let mut bucket = K-1;
+        while (bucket >= 0 && (boundaries[bucket+1] - boundaries[bucket]) <= BLOCKSIZE as u64){
+            if bucket == 0 {
+                return 0;
             }
+            bucket -= 1;
+        }
+        bucket
+    }
 
-            let mut to_write: usize = 0;
+    pub fn cleanup_ext(&mut self, task: &mut DMATask){
+        assert!(self.qpair.is_some(), "Cannot classify_in_out without qpair");
+        assert!(self.buffers.is_some(), "Cannot classify_in_out without buffers");
 
-            if write_ptr <= self.boundaries[i] as i64 || write_ptr as usize > task.size {
-                debug!("write ptr: {write_ptr} <= boundaries: {} or write ptr: {write_ptr} > task.size: {} --> skip", self.boundaries[i], task.size);
-                // do nothing
-            }
+        let qpair = self.qpair.as_mut().unwrap();
+        let buffer = self.buffers.as_mut().unwrap();
 
-            // write ptr > sum => (write ptr-sum) elements overwrite to right
-            // TODO: check if i!=K-1 is necessary
-            else if write_ptr > sum as i64 && i != K - 1 {
-                debug!("write ptr: {write_ptr} > sum: {sum} => (write ptr-sum): {} elements overwrite to right", write_ptr as u64 - sum);
-                let to_write = (write_ptr as u64 - sum) as usize;
-                // read elements and write to correct position
+        let first_bucket = 0;
+        let last_bucket = K;
 
-                // load src and dst from ssd
-                let (src_start_lba, src_start_offset) = calculate_lba_offset(sum as usize, task.start_lba, task.offset);
+        let swap_bucket: i64 = -1;
+        let in_swap_buffer = 0;
+        let overflow_bucket = Self::compute_overflow_bucket(&self.boundaries);
+
+        let is_last_level = task.level+1 == task.level_end;
+
+        for i in first_bucket..last_bucket {
+            let bstart = self.boundaries[i];
+            let bend = self.boundaries[i + 1];
+            let bwrite = self.pointers[i].0;
+
+            let mut dst = bstart as usize;
+            let mut remaining = Self::align_to_next_block(bstart as usize) - bstart as usize;
+
+            debug!("i={}: bstart: {}, bend: {}, bwrite: {}, dst: {}, remaining: {}", i, bstart, bend, bwrite, dst, remaining);
+
+            if i == overflow_bucket && self.overflow {
+                debug!("Overflow bucket");
+                let tail_size = BLOCKSIZE - remaining;
+                let mut src = 0;
+                // head
+                // read remaining elements from ssd
+                let (start_lba, start_offset) = calculate_lba_offset(dst, task.start_lba, task.offset);
+                read_write_elements(qpair, &mut buffer[0], start_lba, dst % BLOCKSIZE + start_offset, remaining, false);
+                buffer[0][(dst % (LBA_SIZE / 8) + start_offset) * 8..(dst % (LBA_SIZE / 8) + start_offset + remaining) * 8].copy_from_slice(u64_to_u8_slice(&mut self.overflow_buffer[..remaining]));
+                // write elements back to ssd
+                read_write_elements(qpair, &mut buffer[0], start_lba, dst % BLOCKSIZE + start_offset, remaining, true);
+
+                src += remaining;
+                remaining = usize::MAX;
+                dst = bwrite as usize - BLOCKSIZE;
+
+                // read tailsize elements from ssd
+                let (start_lba, start_offset) = calculate_lba_offset(dst, task.start_lba, task.offset);
+                read_write_elements(qpair, &mut buffer[0], start_lba, dst % BLOCKSIZE + start_offset, tail_size, false);
+                buffer[0][(dst % (LBA_SIZE / 8) + start_offset) * 8..(dst % (LBA_SIZE / 8) + start_offset + tail_size) * 8].copy_from_slice(u64_to_u8_slice(&mut self.overflow_buffer[src..src + tail_size]));
+                // write elements back to ssd
+                read_write_elements(qpair, &mut buffer[0], start_lba, dst % BLOCKSIZE + start_offset, tail_size, true);
+
+                dst += tail_size;
+
+                // overflow -> reset //TODO: check what this does exactly
+            } else if i as i64 == swap_bucket && in_swap_buffer != 0 {
+                // only relevant for parallel version
+                unimplemented!();
+            } else if bwrite > bend as i64 && bend - bstart > BLOCKSIZE as u64 {
+                debug!("bwrite ({}) > bend ({}) && bend - bstart ({}) > BLOCKSIZE", bwrite, bend, bend - bstart);
+                let mut src = bend as usize;
+                let mut head_size = bwrite as usize - bend as usize;
+
+                //task.arr[dst..dst + head_size].copy_from_slice(&task.arr[src..src + head_size]);
+                // read head_size elements from ssd
+                let (src_start_lba, src_start_offset) = calculate_lba_offset(src, task.start_lba, task.offset);
                 let (dst_start_lba, dst_start_offset) = calculate_lba_offset(dst, task.start_lba, task.offset);
 
-                read_write_elements(&mut qpair, &mut buffer[0], src_start_lba, sum as usize % BLOCKSIZE + src_start_offset, to_write, false);
-                read_write_elements(&mut qpair, &mut buffer[1], dst_start_lba, dst % BLOCKSIZE + dst_start_offset, to_write, false);
+                read_write_elements(qpair, &mut buffer[0], src_start_lba, src % BLOCKSIZE + src_start_offset, head_size, false);
+                read_write_elements(qpair, &mut buffer[1], dst_start_lba, dst % BLOCKSIZE + dst_start_offset, head_size, false);
 
                 let (src_buffer, dst_buffer) = buffer.split_at_mut(1); // Split into two non-overlapping parts
 
-                debug!("Copying {to_write} elements from {sum} to {dst}");
-                debug!("Src: -> {:?}", u8_to_u64_slice(&mut src_buffer[0][(sum as usize % (LBA_SIZE / 8) + src_start_offset) * 8..(sum as usize % (LBA_SIZE / 8) + src_start_offset + to_write) * 8]));
-                debug!("Dst: -> {:?}\n", u8_to_u64_slice(&mut dst_buffer[0][(dst % (LBA_SIZE / 8) + dst_start_offset) * 8..(dst % (LBA_SIZE / 8) + dst_start_offset + to_write) * 8]));
-                let target_slice = &mut dst_buffer[0][(dst % (LBA_SIZE / 8) + dst_start_offset) * 8..(dst % (LBA_SIZE / 8) + dst_start_offset + to_write) * 8];
-                target_slice.copy_from_slice(&src_buffer[0][(sum as usize % (LBA_SIZE / 8) + src_start_offset) * 8..(sum as usize % (LBA_SIZE / 8) + src_start_offset + to_write) * 8]);
+                debug!("Copying {:?} to {:?}", &src_buffer[0][(src % (LBA_SIZE / 8) + src_start_offset) * 8..(src % (LBA_SIZE / 8) + src_start_offset + head_size) * 8], &dst_buffer[0][(dst % (LBA_SIZE / 8) + dst_start_offset) * 8..(dst % (LBA_SIZE / 8) + dst_start_offset + head_size) * 8]);
 
+                let target_slice = &mut dst_buffer[0][(dst % (LBA_SIZE / 8) + dst_start_offset) * 8..(dst % (LBA_SIZE / 8) + dst_start_offset + head_size) * 8];
+                target_slice.copy_from_slice(&src_buffer[0][(src % (LBA_SIZE / 8) + src_start_offset) * 8..(src % (LBA_SIZE / 8) + src_start_offset + head_size) * 8]);
 
-                // write back to ssd
-                read_write_elements(&mut qpair, &mut buffer[1], dst_start_lba, dst % BLOCKSIZE + dst_start_offset, to_write, true);
+                read_write_elements(qpair, &mut buffer[1], dst_start_lba, dst % BLOCKSIZE + dst_start_offset, head_size, true);
 
-                dst += to_write;
-            } else {
-                debug!("write ptr: {write_ptr} <= sum: {sum}");
-                // fill the back
-                to_write = sum as usize - write_ptr as usize;
-                if to_write > 0 {
-                    assert!(to_write <= BLOCKSIZE);
-                    // read from ssd
-                    let (start_lba, start_offset) = calculate_lba_offset(write_ptr as usize, task.start_lba, task.offset);
-                    read_write_elements(&mut qpair, &mut buffer[0], start_lba, write_ptr as usize % BLOCKSIZE + start_offset, to_write, false);
-
-                    // copy to slice
-                    debug!("Copying {to_write} elements from block {i} to {write_ptr}");
-                    debug!("Src: -> {:?}", &self.blocks[i][..to_write]);
-                    debug!("Dst: -> {:?}\n", u8_to_u64_slice(&mut buffer[0][(write_ptr as usize % (LBA_SIZE / 8) + start_offset) * 8..(write_ptr as usize % (LBA_SIZE / 8) + start_offset + to_write) * 8]));
-                    let target_slice = &mut buffer[0][(write_ptr as usize % (LBA_SIZE / 8) + start_offset) * 8..(write_ptr as usize % (LBA_SIZE / 8) + start_offset + to_write) * 8];
-                    target_slice.copy_from_slice(u64_to_u8_slice(&mut self.blocks[i][..to_write]));
-
-                    // write back to ssd
-                    read_write_elements(&mut qpair, &mut buffer[0], start_lba, write_ptr as usize % BLOCKSIZE + start_offset, to_write, true);
-                }
+                dst += head_size;
+                remaining -= head_size;
             }
 
-            // fill the front with remaining elements from blocks buffer
-            let remaining = self.block_counts[i] - to_write;
-            if remaining > 0 {
-                // read from ssd
-                let (start_lba, start_offset) = calculate_lba_offset(dst, task.start_lba, task.offset);
-                read_write_elements(&mut qpair, &mut buffer[0], start_lba, dst % BLOCKSIZE + start_offset, remaining, false);
+            // write elements from buffers
+            let mut src = 0;
+            let mut count = self.block_counts[i];
 
-                // copy to slice
-                debug!("Copying {remaining} elements from block {i} to {dst}");
-                debug!("Src: -> {:?}", &self.blocks[i][to_write..self.block_counts[i]]);
-                debug!("Dst: -> {:?}\n", u8_to_u64_slice(&mut buffer[0][(dst % (LBA_SIZE / 8) + start_offset) * 8..(dst % (LBA_SIZE / 8) + start_offset + remaining) * 8]));
+            if count <= remaining {
+                if count > 0 {
+                    // read count elements from ssd
+                    let (start_lba, start_offset) = calculate_lba_offset(dst, task.start_lba, task.offset);
+                    read_write_elements(qpair, &mut buffer[0], start_lba, dst % BLOCKSIZE + start_offset, count, false);
+                    debug!("Copying blocks[{i}][{}..{}] to {:?}", src, src+count, &mut buffer[0][(dst % (LBA_SIZE / 8) + start_offset) * 8..(dst % (LBA_SIZE / 8) + start_offset + count) * 8]);
+                    buffer[0][(dst % (LBA_SIZE / 8) + start_offset) * 8..(dst % (LBA_SIZE / 8) + start_offset + count) * 8].copy_from_slice(u64_to_u8_slice(&mut self.blocks[i][src..src + count]));
+                    // write elements back to ssd
+                    read_write_elements(qpair, &mut buffer[0], start_lba, dst % BLOCKSIZE + start_offset, count, true);
+                }
+                dst += count;
+                remaining -= count;
+            } else {
+                if remaining > 0 {
+                    // read remaining elements from ssd
+                    let (start_lba, start_offset) = calculate_lba_offset(dst, task.start_lba, task.offset);
+                    read_write_elements(qpair, &mut buffer[0], start_lba, dst % BLOCKSIZE + start_offset, remaining, false);
+                    debug!("Copying blocks[{i}][{}..{}] to {:?}", src, src+remaining, &mut buffer[0][(dst % (LBA_SIZE / 8) + start_offset) * 8..(dst % (LBA_SIZE / 8) + start_offset + remaining) * 8]);
+                    buffer[0][(dst % (LBA_SIZE / 8) + start_offset) * 8..(dst % (LBA_SIZE / 8) + start_offset + remaining) * 8].copy_from_slice(u64_to_u8_slice(&mut self.blocks[i][src..src + remaining]));
+                    // write elements back to ssd
+                    read_write_elements(qpair, &mut buffer[0], start_lba, dst % BLOCKSIZE + start_offset, remaining, true);
+                }
+                src += remaining;
+                count -= remaining;
+                remaining = usize::MAX;
 
-                let target_slice = &mut buffer[0][(dst % (LBA_SIZE / 8) + start_offset) * 8..(dst % (LBA_SIZE / 8) + start_offset + remaining) * 8];
-                target_slice.copy_from_slice(u64_to_u8_slice(&mut self.blocks[i][to_write..self.block_counts[i]]));
+                dst = bwrite as usize;
+                if count > 0 {
+                    // read count elements from ssd
+                    let (start_lba, start_offset) = calculate_lba_offset(dst, task.start_lba, task.offset);
+                    read_write_elements(qpair, &mut buffer[0], start_lba, dst % BLOCKSIZE + start_offset, count, false);
+                    debug!("Copying blocks[{i}][{}..{}] to {:?}", src, src+count, &mut buffer[0][(dst % (LBA_SIZE / 8) + start_offset) * 8..(dst % (LBA_SIZE / 8) + start_offset + count) * 8]);
+                    buffer[0][(dst % (LBA_SIZE / 8) + start_offset) * 8..(dst % (LBA_SIZE / 8) + start_offset + count) * 8].copy_from_slice(u64_to_u8_slice(&mut self.blocks[i][src..src + count]));
+                    // write elements back to ssd
+                    read_write_elements(qpair, &mut buffer[0], start_lba, dst % BLOCKSIZE + start_offset, count, true);
+                }
 
-                // write back to ssd
-                read_write_elements(&mut qpair, &mut buffer[0], start_lba, dst % BLOCKSIZE + start_offset, remaining, true);
+                dst += count;
+
+            }
+            self.block_counts[i] = 0;
+            if !is_last_level {
+                let diff = bend - bstart;
+                if diff <= THRESHOLD as u64 && diff > 1 {
+                    let (start_lba, start_offset) = calculate_lba_offset(bstart as usize, task.start_lba, task.offset);
+                    read_write_elements(qpair, &mut buffer[0], start_lba, bstart as usize % BLOCKSIZE + start_offset, (bend-bstart) as usize, false);
+                    insertion_sort(u8_to_u64_slice(&mut buffer[0][(bstart as usize % (LBA_SIZE / 8) + start_offset) * 8..(bstart as usize % (LBA_SIZE / 8) + start_offset + (bend-bstart) as usize) * 8]));
+                    read_write_elements(qpair, &mut buffer[0], start_lba, bstart as usize % BLOCKSIZE + start_offset, (bend-bstart) as usize, true);
+                }
             }
         }
     }
@@ -346,7 +269,7 @@ pub fn calculate_lba_offset(index: usize, start_lba: usize, task_offset: usize) 
     (lba, offset)
 }
 
-
+/*
 #[cfg(test)]
 mod tests {
     use log::debug;
@@ -400,4 +323,4 @@ mod tests {
 
         debug!("{:?}", input)
     }
-}
+}*/

@@ -28,7 +28,6 @@ pub fn setup_array(arr: &mut [u64], qpair: &mut NvmeQueuePair) {
         buffer[slice.len()..HUGE_PAGE_SIZE_2M].copy_from_slice(&zero_buf[slice.len()..HUGE_PAGE_SIZE_2M]);
         let tmp = qpair.submit_io(&mut buffer.slice(0..slice.len()), (max*HUGE_PAGE_SIZE_2M/LBA_SIZE) as u64, true);
         qpair.complete_io(tmp);
-        assert_eq!(tmp, 1);
     }
 
 

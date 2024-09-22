@@ -34,49 +34,60 @@ use crate::config::{CHUNKS_PER_HUGE_PAGE_1G, CHUNK_SIZE, ELEMENTS_PER_CHUNK, HUG
 use crate::conversion::{u64_to_u8_slice, u8_to_u64, u8_to_u64_slice};
 use crate::merge::merge_sequential;
 use crate::setup::{clear_chunks, setup_array};
-use crate::sort::{sort, sort_parallel};
+use crate::sort::{rolling_sort, sort, sort_parallel};
 use crate::sorter::{DMATask, IPS2RaSorter, Task};
 
-fn verify_sorted(arr: &Vec<u64>) {
+fn verify_sorted(arr: &[u64]) {
     for i in 1..arr.len() {
-        assert!(arr[i - 1] <= arr[i]);
+        assert!(arr[i - 1] <= arr[i], "Difference at i={i}. {} > {}", arr[i-1], arr[i]);
     }
 }
 
-fn main() -> Result<(), Box<dyn Error>>{
+fn main() -> Result<(), Box<dyn Error>> {
     env_logger::builder()
         .filter_level(LevelFilter::Error)
         .init();
 
-    println!("Hello, world!");
+    let mut nvme = vroom::init("0000:00:04.0")?;
+    let mut qpair = nvme.create_io_queue_pair(QUEUE_LENGTH)?;
 
-    let mut data: Vec<u64> = (0..134217728*4).collect();
+    let mut buffer = Dma::allocate(HUGE_PAGE_SIZE_1G)?;
+    read_write_hugepage(&mut qpair, 0, &mut buffer, false);
+
+    clear_chunks(CHUNKS_PER_HUGE_PAGE_1G, &mut qpair);
+
+    let len: usize = 8192*2;
+
+    let mut data: Vec<u64> = (1..=len as u64).collect();
     let mut rng = StdRng::seed_from_u64(12345);
-    let mut sorter = IPS2RaSorter::new_sequential();
+    data.shuffle(&mut rng);
 
-    for i in 0..10000 {
-        println!("\ni = {}", i);
-        data.shuffle(&mut rng);
-        let mut data_copy = data.clone();
+    setup_array(&mut data, &mut qpair);
 
-        let start = Instant::now();
-        let mut task = Task::new(&mut data, 0);
-        task.sample();
-        sorter.sort_sequential(&mut task);
-        sorter.clear();
-        let duration = start.elapsed();
-        println!("Time elapsed in sorting hugepage {i} is: {:?}", duration);
+    let mut task = Task::new(&mut data, 0, 0, 0);
+    task.sample();
+    println!("Levels: {}, {}, {}", task.level, task.level_start, task.level_end);
 
-        let start = Instant::now();
-        data_copy.sort_unstable();
-        let duration = start.elapsed();
-        println!("Time elapsed in quicksorting hugepage {i} is: {:?}", duration);
-    }
+    rolling_sort(nvme, len, false)?;
+
+    // verify sorting
+    let mut buffer = Dma::allocate(HUGE_PAGE_SIZE_1G)?;
+    read_write_hugepage(&mut qpair, 0, &mut buffer, false);
+    let res = u8_to_u64_slice(&mut buffer[0..len*8]);
+
+    verify_sorted(&res.to_vec());
+
+    println!("Sorting done.");
+
+
+
+
+
 
     /*let mut nvme = vroom::init("0000:00:04.0")?;
     let mut qpair = nvme.create_io_queue_pair(QUEUE_LENGTH)?;
 
-    clear_chunks(10, &mut qpair);
+    clear_chunks(CHUNKS_PER_HUGE_PAGE_1G, &mut qpair);
 
     let mut sorter_qpair = nvme.create_io_queue_pair(QUEUE_LENGTH)?;
     let mut buffer_large: Dma<u8> = Dma::allocate(HUGE_PAGE_SIZE_1G)?;
@@ -94,7 +105,7 @@ fn main() -> Result<(), Box<dyn Error>>{
     let mut sorter = IPS2RaSorter::new_sequential();
     let mut ext_sorter = IPS2RaSorter::new_ext_sequential(sorter_qpair, buffers_small, tmp);
 
-    let len: usize = 9234678;
+    let len: usize = 1024;
     const offset: usize = 65;
 
     let mut data: Vec<u64> = vec![0u64; offset];
@@ -106,7 +117,7 @@ fn main() -> Result<(), Box<dyn Error>>{
         data.push(data2[i]);
     }
 
-    //println!("Data: {:?}", data);
+    print!("Data: {:?}", data);
 
 
 
@@ -118,9 +129,11 @@ fn main() -> Result<(), Box<dyn Error>>{
     // remove offset from original data
     data = data[offset..].to_vec();
 
-    let mut task = Task::new(&mut data, 0);
-    task.sample();
-    let mut dma_task = DMATask::new(offset*8/LBA_SIZE, offset%(LBA_SIZE/8), len, task.level);
+    let mut task = Task::new(&mut data, 0, 0, 0);
+    task.sample_untouched();
+    let mut dma_task = DMATask::new(offset*8/LBA_SIZE, offset%(LBA_SIZE/8), len, task.level, task.level_start, task.level_end);
+
+
 
     sorter.classify(&mut task);
     ext_sorter.classify_ext(&mut dma_task);
@@ -224,12 +237,6 @@ fn main() -> Result<(), Box<dyn Error>>{
         assert_eq!(task.arr, u8_to_u64_slice(&mut buffer_large[0..(len * 8) as usize]), "Data not permutated correctly");
         println!("Overflows: {:?}, external = {:?}", sorter.overflow_buffer, ext_sorter.overflow_buffer);
     }*/
-
-
-
-
-
-
 
 
     //sort_dma("0000:00:04.0", 0, false)?;

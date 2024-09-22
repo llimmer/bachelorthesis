@@ -7,28 +7,31 @@ use crate::sorter::{DMATask, IPS2RaSorter, Task};
 impl IPS2RaSorter {
     pub fn classify(&mut self, task: &mut Task) {
         let mut write_idx = 0;
-
-        for i in 0..task.arr.len() {
-            unsafe {
-                let element = task.arr.get_unchecked(i);
-                let block_idx = find_bucket_ips2ra(*element, task.level);
-
-                *self.element_counts.get_unchecked_mut(block_idx) += 1;
-
+        unsafe {
+            for i in 0..task.arr.len() {
+                let element = *task.arr.get_unchecked(i);
+                let block_idx = find_bucket_ips2ra(element, task.level);
 
                 debug!("i = {i} element = {element} -> Bucket {block_idx}");
-
-                // TODO: paper suggests to check if full first, then insert. Maybe change.
-                *self.blocks[block_idx].get_unchecked_mut(self.block_counts[block_idx]) = *element;
-                *self.block_counts.get_unchecked_mut(block_idx) += 1;
 
                 if *self.block_counts.get_unchecked(block_idx) == BLOCKSIZE {
                     debug!("Block {block_idx} full, writing to disk: {:?}", self.blocks[block_idx]);
                     let target_slice = &mut task.arr[write_idx..write_idx + BLOCKSIZE];
                     target_slice.copy_from_slice(&self.blocks[block_idx]);
                     write_idx += BLOCKSIZE;
+
+                    *self.element_counts.get_unchecked_mut(block_idx) += BLOCKSIZE as u64;
                     *self.block_counts.get_unchecked_mut(block_idx) = 0;
                 }
+
+
+                *self.blocks[block_idx].get_unchecked_mut(self.block_counts[block_idx]) = element;
+                *self.block_counts.get_unchecked_mut(block_idx) += 1;
+            }
+
+            // check for partially filled blocks
+            for i in 0..K {
+                *self.element_counts.get_unchecked_mut(i) += self.block_counts[i] as u64;
             }
         }
 
@@ -55,18 +58,12 @@ impl IPS2RaSorter {
         assert!(max_buffered_elements <= max_storage, "Not enough storage for classification: {} > {}", max_buffered_elements, max_storage);
 
 
-        //assert!(task.size > 4*CHUNK_SIZE/8, "Task size too small for DMA classification");
-        // Load first HugePage
+        // TODO: change to load as many hugepages as supported by QUEUE_LENGTH
         debug!("Loading first hugepage:");
         for i in 0..CHUNKS_PER_HUGE_PAGE_2M {
             debug!("Loading chunk {} (LBA: {})", i, i*LBA_PER_CHUNK + task.start_lba);
             qpair.submit_io(&mut buffer[0].slice(i * CHUNK_SIZE..(i + 1) * CHUNK_SIZE), ((i * LBA_PER_CHUNK) + task.start_lba) as u64, false);
         }
-
-        // DEBUG only
-        //self.qpair.complete_io(CHUNKS_PER_HUGE_PAGE);
-        // print hugepage
-        //debug!("Hugepage 0: {:?}", u8_to_u64_slice(&mut self.dma_blocks[0][..CHUNKS_PER_HUGE_PAGE*CHUNK_SIZE]));
 
 
         let mut cur_hugepage = 0;
@@ -92,17 +89,13 @@ impl IPS2RaSorter {
             }
 
             let element = u8_to_u64(&(&buffer[cur_hugepage % num_buffers])[idx * 8..idx * 8 + 8]);
-
             let block_idx = find_bucket_ips2ra(element, task.level);
             unsafe {
-                *self.element_counts.get_unchecked_mut(block_idx) += 1;
                 debug!("i = {}, idx = {}, cur_hugepage = {}, cur_chunk = {}, element = {}, bucket = {}", i, idx, cur_hugepage, cur_chunk, element, block_idx);
-
-                *self.blocks[block_idx].get_unchecked_mut(self.block_counts[block_idx]) = element;
-                *self.block_counts.get_unchecked_mut(block_idx) += 1;
 
                 if *self.block_counts.get_unchecked(block_idx) == BLOCKSIZE {
                     debug!("Block {block_idx} full, writing {BLOCKSIZE} elements to buffer {}: {:?}", write_hugepage % num_buffers, self.blocks[block_idx]);
+                    *self.element_counts.get_unchecked_mut(block_idx) += BLOCKSIZE as u64;
 
                     let offset = write_idx % ELEMENTS_PER_CHUNK;
                     let mut remaining = CHUNK_SIZE / 8 - offset;
@@ -153,9 +146,10 @@ impl IPS2RaSorter {
 
                         write_idx += BLOCKSIZE;
                         *self.block_counts.get_unchecked_mut(block_idx) = 0;
-
                     }
                 }
+                *self.blocks[block_idx].get_unchecked_mut(self.block_counts[block_idx]) = element;
+                *self.block_counts.get_unchecked_mut(block_idx) += 1;
             }
         }
         let remaining_elements = write_idx % ELEMENTS_PER_CHUNK;
@@ -163,16 +157,24 @@ impl IPS2RaSorter {
         // check for unwritten chunk
         if write_idx % ELEMENTS_PER_CHUNK != 0 {
             debug!("Last chunk: {:?}", u8_to_u64_slice(&mut buffer[write_hugepage % num_buffers][write_chunk * CHUNK_SIZE..(write_chunk + 1) * CHUNK_SIZE]));
-            let num_lba = (remaining_elements*8 + LBA_SIZE - 1) / LBA_SIZE;
-            let tmp = qpair.submit_io(&mut buffer[write_hugepage % num_buffers].slice(write_chunk * CHUNK_SIZE..write_chunk * CHUNK_SIZE + num_lba*LBA_SIZE), ((write_hugepage * CHUNKS_PER_HUGE_PAGE_2M * LBA_PER_CHUNK) + write_chunk * LBA_PER_CHUNK + task.start_lba) as u64, true);
+            let num_lba = (remaining_elements * 8 + LBA_SIZE - 1) / LBA_SIZE;
+            let tmp = qpair.submit_io(&mut buffer[write_hugepage % num_buffers].slice(write_chunk * CHUNK_SIZE..write_chunk * CHUNK_SIZE + num_lba * LBA_SIZE), ((write_hugepage * CHUNKS_PER_HUGE_PAGE_2M * LBA_PER_CHUNK) + write_chunk * LBA_PER_CHUNK + task.start_lba) as u64, true);
             assert_eq!(tmp, 1);
             qpair.complete_io(1);
         }
 
+        // check for partially filled blocks
+        unsafe {
+            for i in 0..K {
+                *self.element_counts.get_unchecked_mut(i) += self.block_counts[i] as u64;
+            }
+        }
+
+
         write_idx -= task.offset;
 
         debug!("Completing last SQEs");
-        qpair.complete_io(CHUNKS_PER_HUGE_PAGE_2M);
+        qpair.complete_io(CHUNKS_PER_HUGE_PAGE_2M); // TODO: remove after bounds check
         debug!("Done");
         self.classified_elements = write_idx;
     }
@@ -180,12 +182,9 @@ impl IPS2RaSorter {
 
 
 pub fn find_bucket_ips2ra(input: u64, level: usize) -> usize {
-    let number_bits = (K as u64).ilog2() as usize;
-    //debug!("Number of bits: {:?}", number_bits);
-    //debug!("Level: {:?}", level);
-    let start = 64 - (number_bits * (level + 1));
-    let mask = (1 << number_bits) - 1;
-    ((input >> start) & mask) as usize
+    let bits_needed = (K as f64).log2().ceil() as u64;
+    let shift = 8 * (7 - level as u64); // Adjust shift so that level 0 extracts the highest 8 bits
+    ((input >> shift) & ((1 << bits_needed) - 1)) as usize
 }
 
 

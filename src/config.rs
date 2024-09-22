@@ -1,12 +1,12 @@
 pub const K: usize = 256; // number of buckets
-pub const BLOCKSIZE: usize = 256; // number of elements that belong to same bucket
-pub const THRESHOLD: usize = 128; // Threshold from which samplesort is used
+pub const BLOCKSIZE: usize = 64; // number of elements that belong to same bucket
+pub const THRESHOLD: usize = 32; // Threshold from which samplesort is used
 pub const NUM_THREADS: usize = 8;
 
 // DMA:
 pub const LBA_SIZE: usize = 512; // Logical Block Addressing Size of SSD (usually 512)
 pub const CHUNK_SIZE: usize = 2*4096; // Number of bytes that can be read/written with a single SQE
-pub const HUGE_PAGES_2M: usize = 200; // Number of 2 MiB hugepages allocated in main memory (-> Setup script)
+pub const HUGE_PAGES_2M: usize = 50; // Number of 2 MiB hugepages allocated in main memory (-> Setup script)
 pub const HUGE_PAGES_1G: usize = 4; // Number of 1 GiB hugepages allocated in main memory (-> Setup script)
 pub const HUGE_PAGE_SIZE_2M: usize = 2 * 1024 * 1024; // Number of bytes per 2M hugepage
 pub const HUGE_PAGE_SIZE_1G: usize = 1024 * 1024 * 1024; // Number of bytes per 1G hugepage

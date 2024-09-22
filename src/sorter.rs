@@ -6,13 +6,17 @@ use crate::config::{K, BLOCKSIZE, HUGE_PAGES_1G, HUGE_PAGE_SIZE_1G, THRESHOLD};
 pub struct Task<'a> {
     pub arr: &'a mut [u64],
     pub level: usize,
+    pub level_start: usize,
+    pub level_end: usize,
 }
 
 impl Task<'_> {
-    pub fn new(arr: &mut [u64], level: usize) -> Task {
+    pub fn new(arr: &mut [u64], level: usize, level_start: usize, level_end: usize) -> Task { // TODO: check level start + end
         Task {
             arr,
             level,
+            level_start,
+            level_end,
         }
     }
     pub fn is_base_case(&self) -> bool {
@@ -23,13 +27,13 @@ impl Task<'_> {
         let mut res = Vec::with_capacity(K);
         let (first, mut rest) = self.arr.split_at_mut(element_counts[0] as usize);
         if first.len() > 1 {
-            res.push(Task::new(first, self.level + 1));
+            res.push(Task::new(first, self.level + 1, self.level_start, self.level_end));
         }
         for i in 1..K {
             let (left, right) = rest.split_at_mut(element_counts[i] as usize);
             rest = right;
             if left.len() > 1 {
-                res.push(Task::new(left, self.level + 1));
+                res.push(Task::new(left, self.level + 1, self.level_start, self.level_end));
             }
 
         }
@@ -44,15 +48,19 @@ pub struct DMATask<> {
     pub offset: usize,
     pub size:  usize,
     pub level: usize,
+    pub level_start: usize,
+    pub level_end: usize,
 }
 
 impl DMATask {
-    pub fn new(start_lba: usize, offset: usize, size: usize, level: usize) -> DMATask {
+    pub fn new(start_lba: usize, offset: usize, size: usize, level: usize, level_start: usize, level_end: usize) -> DMATask {
         DMATask {
             start_lba,
             offset,
             size,
             level,
+            level_start,
+            level_end,
         }
     }
 }
@@ -71,7 +79,8 @@ pub struct IPS2RaSorter {
     // local buffers
     pub blocks: [[u64; BLOCKSIZE]; K],
     pub overflow: bool,
-    pub overflow_buffer: Vec<u64>,
+    pub overflow_buffer: [u64; BLOCKSIZE],
+    pub swap_buffer: [[u64; BLOCKSIZE]; 2],
 
     pub parallel: bool,
 
@@ -92,7 +101,8 @@ impl IPS2RaSorter {
             block_counts: [0; K],
             element_counts: [0; K],
             overflow: false,
-            overflow_buffer: Vec::new(),
+            overflow_buffer: [0; BLOCKSIZE],
+            swap_buffer: [[0u64; BLOCKSIZE]; 2],
             parallel: false,
             qpair: None,
             buffers: None,
@@ -107,9 +117,11 @@ impl IPS2RaSorter {
         for i in self.element_counts.iter_mut() {
             *i = 0;
         }
+        for i in self.overflow_buffer.iter_mut(){
+            *i = 0;
+        }
         self.primary_bucket = 0;
         self.overflow = false;
-        self.overflow_buffer.clear();
     }
 
     pub fn new_parallel() -> Box<Self> {
@@ -122,7 +134,8 @@ impl IPS2RaSorter {
             block_counts: [0; K],
             element_counts: [0; K],
             overflow: false,
-            overflow_buffer: Vec::new(),
+            overflow_buffer: [0; BLOCKSIZE],
+            swap_buffer: [[0u64; BLOCKSIZE]; 2],
             parallel: true,
             qpair: None,
             buffers: None,
@@ -140,7 +153,8 @@ impl IPS2RaSorter {
             block_counts: [0; K],
             element_counts: [0; K],
             overflow: false,
-            overflow_buffer: Vec::new(),
+            overflow_buffer: [0; BLOCKSIZE],
+            swap_buffer: [[0u64; BLOCKSIZE]; 2],
             parallel: false,
             qpair: Some(qpair),
             buffers: Some(buffers),
