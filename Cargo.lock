@@ -79,6 +79,7 @@ dependencies = [
  "criterion",
  "crossbeam-channel",
  "env_logger",
+ "lazy_static",
  "log",
  "rand 0.9.0-alpha.2",
  "rayon",
