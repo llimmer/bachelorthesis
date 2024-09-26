@@ -2,7 +2,7 @@ use std::cmp::{max, min};
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use crate::config::{K};
-use crate::{read_write_hugepage, u8_to_u64_slice, CHUNKS_PER_HUGE_PAGE_1G, HUGE_PAGES_1G, HUGE_PAGE_SIZE_1G, LBA_PER_CHUNK};
+use crate::{read_write_hugepage_1G, u8_to_u64_slice, CHUNKS_PER_HUGE_PAGE_1G, HUGE_PAGES_1G, HUGE_PAGE_SIZE_1G, LBA_PER_CHUNK};
 use crate::sorter::{DMATask, IPS2RaSorter, Task};
 
 impl<'a> Task<'_> {
@@ -114,7 +114,7 @@ impl IPS2RaSorter {
         let mut max = u64::MAX;
         let mut remaining = task.size;
         for i in 0..task.size / (HUGE_PAGE_SIZE_1G/8) {
-            read_write_hugepage(self.qpair.as_mut().unwrap(), task.start_lba + i * LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G, self.sort_buffer.as_mut().unwrap(), false);
+            read_write_hugepage_1G(self.qpair.as_mut().unwrap(), task.start_lba + i * LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G, self.sort_buffer.as_mut().unwrap(), false);
             let u64slice = u8_to_u64_slice(&mut self.sort_buffer.as_mut().unwrap()[0..HUGE_PAGE_SIZE_1G]);
             let tmp_max = u64slice[{
                 if remaining >= HUGE_PAGES_1G / 8 {

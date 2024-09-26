@@ -13,7 +13,8 @@ use rand::SeedableRng;
 use vroom::memory::{Dma, DmaSlice};
 use vroom::{NvmeDevice, NvmeQueuePair, QUEUE_LENGTH};
 use crate::conversion::u8_to_u64_slice;
-use crate::sort_merge::sequential_sort_merge;
+use crate::LBA_SIZE;
+use crate::sequential_sort_merge::sequential_sort_merge;
 
 pub fn sort(arr: &mut [u64]) {
     let mut task = Task::new(arr, 0, 0, 8);
@@ -66,67 +67,75 @@ pub fn rolling_sort(mut nvme: NvmeDevice, len: usize, parallel: bool) -> Result<
     Ok(nvme)
 }
 
+pub fn read_write_elements(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, target_lba: usize, target_offset: usize, num_elements: usize, write: bool) {
+    //println!("starting read_write_elements");
+    let num_lba = (target_offset*8 + num_elements*8 + LBA_SIZE - 1) / LBA_SIZE;
+
+    let mut remaining_chunks = num_lba / LBA_PER_CHUNK;
+    let remaining_lba = num_lba % LBA_PER_CHUNK;
+    let max_lba_per_queue = QUEUE_LENGTH*LBA_PER_CHUNK;
+
+    //println!("Qpair at start: {}", qpair.sub_queue.is_empty());
 
 
-pub fn read_write_hugepage(qpair: &mut NvmeQueuePair, lba_offset: usize, segment: &mut Dma<u8>, write: bool){
-    let max_chunks_per_queue = QUEUE_LENGTH/8;
-    let chunks_per_segment = HUGE_PAGE_SIZE_1G /CHUNK_SIZE;
+    assert!(buffer.size >= num_lba*LBA_SIZE/8, "Buffer size too small");
 
-    //println!("Hugepage Size: {}, Max chunks per hugepage: {}, chunks_per_hugepage: {}, offset: {}", HUGE_PAGE_SIZE, max_chunks_per_queue, chunks_per_segment, offset);
-    if chunks_per_segment <= max_chunks_per_queue {
-        for i in 0..chunks_per_segment {
-            let tmp = qpair.submit_io(&mut segment.slice(i*CHUNK_SIZE..(i+1)*CHUNK_SIZE), (i*LBA_PER_CHUNK + lba_offset) as u64, write);
-            //println!("Requesting lba {} to chunk {}, SQEs: {}", (LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE*offset), i, tmp);
-        }
-        qpair.complete_io(chunks_per_segment);
+    if num_lba < max_lba_per_queue{
+        let tmp = qpair.submit_io(&mut buffer.slice(0..num_lba*LBA_SIZE), target_lba as u64, write);
+        qpair.complete_io(tmp);
     } else {
-        // request max_chunks_per_queue chunks
-        for i in 0..max_chunks_per_queue {
-            //println!("Requesting lba {} to chunk {}", (LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE*offset), i);
-            qpair.submit_io(&mut segment.slice(i*CHUNK_SIZE..(i+1)*CHUNK_SIZE), (i*LBA_PER_CHUNK + lba_offset) as u64, write);
-        }
-        //println!("////////////////////////////////////////////");
-        for i in max_chunks_per_queue..chunks_per_segment {
-            qpair.complete_io(1);
-            qpair.submit_io(&mut segment.slice(i*CHUNK_SIZE..(i+1)*CHUNK_SIZE),  (i*LBA_PER_CHUNK + lba_offset) as u64, write);
-        }
-        // wait for remaining chunks
-        qpair.complete_io(max_chunks_per_queue);
-    }
-}
-
-/*
-#[cfg(test)]
-mod tests {
-    use rand::prelude::StdRng;
-    use rand::{Rng, SeedableRng};
-    use super::*;
-
-    #[test]
-    fn small_sequential() {
-        let mut rng = StdRng::seed_from_u64(12345);
-        let n = rng.gen_range(512..1024);
-        let mut arr: Vec<u64> = (0..n).map(|_| rng.gen_range(0..u64::MAX)).collect();
-
-        sort(&mut arr);
-        for i in 1..arr.len() {
-            assert!(arr[i - 1] <= arr[i]);
-        }
-    }
-
-    #[test]
-    fn big_sequential() {
-        let mut rng = StdRng::seed_from_u64(12345);
-        for _ in 0..1024 {
-            let n = rng.gen_range(512..1024);
-            let mut arr: Vec<u64> = (0..n).map(|_| rng.gen_range(0..u64::MAX)).collect();
-
-            sort(&mut arr);
-            for i in 1..arr.len() {
-                assert!(arr[i - 1] <= arr[i]);
+        // request/write max_lba_per_queue lbas
+        let mut sum = 0;
+        for i in 0..max_lba_per_queue/LBA_PER_CHUNK {
+            let tmp = qpair.submit_io(&mut buffer.slice(i*CHUNK_SIZE..(i+1)*CHUNK_SIZE), (i*LBA_PER_CHUNK + target_offset) as u64, write);
+            assert_eq!(tmp, 1);
+            sum += tmp;
+            if qpair.sub_queue.is_full(){
+                println!("Queue full after {} requests", sum);
+                break;
             }
         }
+        remaining_chunks -= sum;
+
+        for i in 0..remaining_chunks {
+            qpair.complete_io(1);
+            let tmp = qpair.submit_io(&mut buffer.slice((i+sum)*CHUNK_SIZE..(i+1+sum)*CHUNK_SIZE),  (i*LBA_PER_CHUNK + target_offset + sum*LBA_PER_CHUNK) as u64, write);
+            assert_eq!(tmp, 1);
+        }
+
+        for i in 0..remaining_lba {
+            qpair.complete_io(1);
+            let tmp = qpair.submit_io(&mut buffer.slice((i+sum+remaining_chunks)*CHUNK_SIZE..(i+1+sum+remaining_chunks)*CHUNK_SIZE + LBA_SIZE),  (i + target_offset + (sum+remaining_chunks)*LBA_PER_CHUNK) as u64, write);
+            assert_eq!(tmp, 1);
+        }
+
+        qpair.complete_io(sum);
     }
+
 }
 
- */
+pub fn read_write_hugepage_1G(qpair: &mut NvmeQueuePair, lba_offset: usize, segment: &mut Dma<u8>, write: bool){
+    read_write_elements(qpair, segment, lba_offset, 0, HUGE_PAGE_SIZE_1G/8, write);
+}
+
+pub fn read_write_hugepage_2M(qpair: &mut NvmeQueuePair, lba_offset: usize, segment: &mut Dma<u8>, write: bool){
+    read_write_elements(qpair, segment, lba_offset, 0, HUGE_PAGE_SIZE_2M/8, write);
+}
+
+impl IPS2RaSorter{
+    pub fn read_write_sort_buffer_1G(&mut self, lba_offset: usize, write: bool){
+        assert!(self.qpair.is_some(), "Queue pair not initialized");
+        assert!(self.sort_buffer.is_some(), "Sort buffer not initialized");
+        let mut qpair = self.qpair.as_mut().unwrap();
+        let mut sort_buffer = self.sort_buffer.as_mut().unwrap();
+        read_write_elements(qpair, sort_buffer, lba_offset, 0, HUGE_PAGE_SIZE_1G/8, write);
+    }
+
+    pub fn read_write_sort_buffer_2M(&mut self, lba_offset: usize, write: bool){
+        assert!(self.qpair.is_some(), "Queue pair not initialized");
+        assert!(self.sort_buffer.is_some(), "Sort buffer not initialized");
+        let mut qpair = self.qpair.as_mut().unwrap();
+        let mut sort_buffer = self.sort_buffer.as_mut().unwrap();
+        read_write_elements(qpair, sort_buffer, lba_offset, 0, HUGE_PAGE_SIZE_2M/8, write);
+    }
+}

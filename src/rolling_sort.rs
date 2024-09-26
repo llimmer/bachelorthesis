@@ -1,7 +1,7 @@
 use std::io;
 use crate::config::{HUGE_PAGE_SIZE_1G, K, LBA_SIZE, THRESHOLD};
 use crate::sorter::{DMATask, IPS2RaSorter, Task};
-use crate::{read_write_hugepage, u8_to_u64_slice, HUGE_PAGE_SIZE_2M, };
+use crate::{read_write_hugepage_1G, u8_to_u64_slice, HUGE_PAGE_SIZE_2M, };
 
 impl IPS2RaSorter{
     pub fn sequential_rolling_sort(&mut self, task: &mut DMATask) {
@@ -23,7 +23,7 @@ impl IPS2RaSorter{
             println!("Task-Size < Hugepage-Size/8 => Sequential sort");
             let qpair = self.qpair.as_mut().unwrap();
             let sort_buffer = self.sort_buffer.as_mut().unwrap();
-            read_write_hugepage(qpair, task.start_lba, sort_buffer, false);
+            read_write_hugepage_1G(qpair, task.start_lba, sort_buffer, false);
 
             let u64slice= u8_to_u64_slice(&mut sort_buffer[0..task.size*8]);
             println!("Read: {:?}", u64slice);
@@ -35,7 +35,7 @@ impl IPS2RaSorter{
 
             println!("After sort: {:?}", new_task.arr);
             // write back to ssd
-            read_write_hugepage(qpair, task.start_lba, sort_buffer, true);
+            read_write_hugepage_1G(qpair, task.start_lba, sort_buffer, true);
             return;
         }
 

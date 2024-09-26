@@ -4,7 +4,7 @@ use vroom::{NvmeQueuePair, QUEUE_LENGTH};
 use crate::config::{BLOCKSIZE, K, LBA_PER_CHUNK, LBA_SIZE, THRESHOLD};
 use crate::conversion::{u64_to_u8_slice, u8_to_u64_slice};
 use crate::sorter::{DMATask, IPS2RaSorter, Task};
-use crate::{insertion_sort};
+use crate::base_case::{insertion_sort};
 
 impl IPS2RaSorter {
 

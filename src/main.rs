@@ -10,8 +10,8 @@ use rand::seq::index::sample;
 use std::error::Error;
 use vroom::memory::{Dma, DmaSlice};
 use vroom::QUEUE_LENGTH;
-use bachelorthesis::sort::read_write_hugepage;
-use bachelorthesis::{sort_merge, K, LBA_SIZE};
+use bachelorthesis::sort::read_write_hugepage_1G;
+use bachelorthesis::{parallel_sort_merge, K, LBA_SIZE};
 
 mod sampling;
 mod base_case;
@@ -25,17 +25,13 @@ mod sequential;
 mod parallel;
 mod conversion;
 mod setup;
-mod merge;
-mod sort_merge;
+mod parallel_sort_merge;
 mod rolling_sort;
-
-use crate::base_case::insertion_sort;
-use crate::config::{CHUNKS_PER_HUGE_PAGE_1G, CHUNK_SIZE, ELEMENTS_PER_CHUNK, HUGE_PAGES_1G, HUGE_PAGE_SIZE_1G, HUGE_PAGE_SIZE_2M, LBA_PER_CHUNK};
+mod sequential_sort_merge;
+use crate::config::{CHUNKS_PER_HUGE_PAGE_1G, CHUNKS_PER_HUGE_PAGE_2M, CHUNK_SIZE, ELEMENTS_PER_CHUNK, HUGE_PAGES_1G, HUGE_PAGE_SIZE_1G, HUGE_PAGE_SIZE_2M, LBA_PER_CHUNK};
 use crate::conversion::{u64_to_u8_slice, u8_to_u64, u8_to_u64_slice};
-use crate::merge::merge_sequential;
 use crate::setup::{clear_chunks, setup_array};
-use crate::sort::{rolling_sort, sort, sort_parallel};
-use crate::sorter::{DMATask, IPS2RaSorter, Task};
+use crate::parallel_sort_merge::parallel_sort_merge;
 
 fn verify_sorted(arr: &[u64]) {
     for i in 1..arr.len() {
@@ -51,38 +47,34 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut nvme = vroom::init("0000:00:04.0")?;
     let mut qpair = nvme.create_io_queue_pair(QUEUE_LENGTH)?;
 
-    let mut buffer = Dma::allocate(HUGE_PAGE_SIZE_1G)?;
-    read_write_hugepage(&mut qpair, 0, &mut buffer, false);
+    let mut buffer_big = Dma::allocate(HUGE_PAGE_SIZE_1G)?;
 
-    clear_chunks(CHUNKS_PER_HUGE_PAGE_1G, &mut qpair);
+    clear_chunks(CHUNKS_PER_HUGE_PAGE_1G*5, &mut qpair);
 
-    let len: usize = 8192*2;
+    let mut data: Vec<u64> = (0..8192 as u64).map(|x| 1*x).collect();
+    let mut data2: Vec<u64> = (0..8192 as u64).map(|x| 1*x).collect();
+    //let mut data3: Vec<u64> = (0..8192 as u64).map(|x| 3*x).collect();
 
-    let mut data: Vec<u64> = (1..=len as u64).collect();
     let mut rng = StdRng::seed_from_u64(12345);
     data.shuffle(&mut rng);
+    data2.shuffle(&mut rng);
 
-    setup_array(&mut data, &mut qpair);
+    buffer_big[0..data.len()*8].copy_from_slice(u64_to_u8_slice(&mut data));
+    read_write_hugepage_1G(&mut qpair, 0, &mut buffer_big, true);
 
-    let mut task = Task::new(&mut data, 0, 0, 0);
-    task.sample();
-    println!("Levels: {}, {}, {}", task.level, task.level_start, task.level_end);
+    buffer_big[0..data2.len()*8].copy_from_slice(u64_to_u8_slice(&mut data2));
+    read_write_hugepage_1G(&mut qpair, LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE_1G, &mut buffer_big, true);
 
-    rolling_sort(nvme, len, false)?;
+    //buffer_small[0..data3.len()*8].copy_from_slice(u64_to_u8_slice(&mut data3));
+    //read_write_hugepage_2M(&mut qpair, 2*LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE_1G, &mut buffer_small, true);
 
-    // verify sorting
-    let mut buffer = Dma::allocate(HUGE_PAGE_SIZE_1G)?;
-    read_write_hugepage(&mut qpair, 0, &mut buffer, false);
-    let res = u8_to_u64_slice(&mut buffer[0..len*8]);
+    // read line from stdin
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
 
-    verify_sorted(&res.to_vec());
+    parallel_sort_merge(nvme, 8192*2)?;
 
-    println!("Sorting done.");
-
-
-
-
-
+    return Ok(());
 
     /*let mut nvme = vroom::init("0000:00:04.0")?;
     let mut qpair = nvme.create_io_queue_pair(QUEUE_LENGTH)?;

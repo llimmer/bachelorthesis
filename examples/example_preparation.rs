@@ -3,7 +3,7 @@ use rand::prelude::{SliceRandom, StdRng};
 use rand::{Rng, SeedableRng};
 use vroom::memory::{Dma, DmaSlice};
 use vroom::QUEUE_LENGTH;
-use bachelorthesis::{clear_chunks, read_write_hugepage, u64_to_u8_slice, CHUNKS_PER_HUGE_PAGE_1G, CHUNKS_PER_HUGE_PAGE_2M, CHUNK_SIZE, HUGE_PAGES_1G, HUGE_PAGE_SIZE_1G, HUGE_PAGE_SIZE_2M, LBA_PER_CHUNK};
+use bachelorthesis::{clear_chunks, read_write_hugepage_1G, u64_to_u8_slice, CHUNKS_PER_HUGE_PAGE_1G, CHUNKS_PER_HUGE_PAGE_2M, CHUNK_SIZE, HUGE_PAGES_1G, HUGE_PAGE_SIZE_1G, HUGE_PAGE_SIZE_2M, LBA_PER_CHUNK};
 
 pub fn main() {
     let num_hugepages = 3;
@@ -25,7 +25,7 @@ pub fn main() {
         data.shuffle(&mut rng);
 
         buffer[0..data.len()*8].copy_from_slice(&u64_to_u8_slice(&mut data));
-        read_write_hugepage(&mut qpair, i*LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE_1G, &mut buffer, true);
+        read_write_hugepage_1G(&mut qpair, i*LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE_1G, &mut buffer, true);
     }
     println!("Preparation complete");
 }

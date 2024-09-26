@@ -125,6 +125,7 @@ impl IPS2RaSorter {
     }
 
     pub fn new_parallel() -> Box<Self> {
+        //println!("Creating new parallel sorter");
         Box::new(Self {
             classified_elements: 0,
             pointers: [(0, 0); K],

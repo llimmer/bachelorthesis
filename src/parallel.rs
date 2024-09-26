@@ -28,8 +28,9 @@ pub fn process_task(task: &mut Task) {
 
         scope(|s| {
             for mut task in task.generate_subtasks(&element_counts){
-                debug!("Thread {} spawning subtasks {:?}", rayon::current_thread_index().unwrap(), task.arr);
+                //println!("Thread {} spawning subtasks", rayon::current_thread_index().unwrap());
                 s.spawn(move |_| {
+                    //println!("Thread {} spawned", rayon::current_thread_index().unwrap());
                     process_task(&mut task);
                 });
             }

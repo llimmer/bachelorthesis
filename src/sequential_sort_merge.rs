@@ -1,12 +1,13 @@
+use crate::config::*;
+use std::error::Error;
+use vroom::memory::Dma;
+use vroom::{NvmeDevice, NvmeQueuePair, QUEUE_LENGTH};
+use crate::sorter::{IPS2RaSorter, Task};
+use crate::{read_write_hugepage_1G, u8_to_u64_slice};
 use std::collections::BinaryHeap;
 use std::io;
 use std::time::Duration;
 use log::{debug, info};
-use vroom::memory::Dma;
-use vroom::NvmeQueuePair;
-use crate::config::{CHUNKS_PER_HUGE_PAGE_1G, HUGE_PAGES_1G, HUGE_PAGE_SIZE_1G, LBA_PER_CHUNK};
-use crate::conversion::u8_to_u64_slice;
-use crate::sort::read_write_hugepage;
 
 struct HeapEntry{
     value: u64,
@@ -33,6 +34,69 @@ impl PartialOrd for HeapEntry {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
+}
+
+pub fn sequential_sort_merge(mut nvme: NvmeDevice, len: usize) -> Result<NvmeDevice, Box<dyn Error>> {
+
+    let mut qpair = nvme.create_io_queue_pair(QUEUE_LENGTH)?;
+    let mut sort_buffer = Dma::allocate(HUGE_PAGE_SIZE_1G)?;
+
+    let mut buffers: Vec<Dma<u8>> = Vec::new();
+    for _ in 0..HUGE_PAGES_1G - 1 {
+        buffers.push(Dma::allocate(HUGE_PAGE_SIZE_1G)?);
+    }
+
+    let mut sorter = IPS2RaSorter::new_sequential();
+
+    let mut remaining = len;
+    println!("Starting sorting:");
+    let mut sort_times = Vec::new();
+    for i in 0..((len + HUGE_PAGE_SIZE_1G / 8 - 1) / (HUGE_PAGE_SIZE_1G / 8)) {
+        // read hugepage from ssd
+        println!("Reading hugepage {i}");
+        let start = std::time::Instant::now();
+        read_write_hugepage_1G(&mut qpair, i * LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G, &mut sort_buffer, false);
+
+        println!("Done");
+
+        let u64slice = u8_to_u64_slice(&mut sort_buffer[0..{
+            if remaining > HUGE_PAGE_SIZE_1G / 8 {
+                remaining -= HUGE_PAGE_SIZE_1G / 8;
+                HUGE_PAGE_SIZE_1G
+            } else {
+                let res = remaining;
+                remaining = 0;
+                res * 8
+            }
+        }]);
+        println!("Creating and sampling task of length {}", u64slice.len());
+        let mut task = Task::new(u64slice, 0, 0, 0);
+        task.sample();
+        println!("Done");
+
+        println!("Sorting hugepage {i}");
+        sorter.sequential_rec(&mut task);
+        println!("Done");
+
+        println!("Writing hugepage {i}");
+        read_write_hugepage_1G(&mut qpair, i * LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G, &mut sort_buffer, true);
+        println!("Done");
+
+        sorter.clear();
+        let duration = start.elapsed();
+        println!("Time elapsed in sorting hugepage {i} is: {:?}", duration);
+        sort_times.push(duration);
+    }
+
+    println!("Total time elapsed in sorting is: {:?}", sort_times.iter().sum::<std::time::Duration>());
+    println!("Starting merge");
+    let start = std::time::Instant::now();
+    merge_sequential(&mut qpair, len, &mut buffers, &mut sort_buffer);
+    let duration = start.elapsed();
+    println!("Time elapsed in merging is: {:?}", duration);
+
+    println!("Total time elapsed in sorting and merging is: {:?}", sort_times.iter().sum::<std::time::Duration>() + duration);
+    Ok(nvme)
 }
 
 pub fn merge_sequential(qpair: &mut NvmeQueuePair, len: usize, buffer: &mut Vec<Dma<u8>>, output_buffer: &mut Dma<u8>) {
@@ -70,7 +134,7 @@ pub fn merge_sequential(qpair: &mut NvmeQueuePair, len: usize, buffer: &mut Vec<
                 info!("Initial read: hugepage: {} (offset: {}), index: {k}", j*result_length + k*input_length + read_offset, read_offset);
 
                 let start = std::time::Instant::now();
-                read_write_hugepage(qpair, (j*result_length + k*input_length + read_offset) * LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE_1G, &mut buffer[k], false);
+                read_write_hugepage_1G(qpair, (j*result_length + k*input_length + read_offset) * LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE_1G, &mut buffer[k], false);
                 let duration = start.elapsed();
                 timeForIO+=duration;
 
@@ -123,7 +187,7 @@ pub fn merge_sequential(qpair: &mut NvmeQueuePair, len: usize, buffer: &mut Vec<
                     info!("Output buffer full, writing to SSD hugepage {} (written hugepages: {written_hugepages}):", j * result_length + write_offset + written_hugepages);
 
                     let start = std::time::Instant::now();
-                    read_write_hugepage(qpair, (j * result_length + write_offset + written_hugepages)*LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE_1G, output_buffer, true);
+                    read_write_hugepage_1G(qpair, (j * result_length + write_offset + written_hugepages)*LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE_1G, output_buffer, true);
                     let duration = start.elapsed();
                     timeForIO+=duration;
 
@@ -168,7 +232,7 @@ pub fn merge_sequential(qpair: &mut NvmeQueuePair, len: usize, buffer: &mut Vec<
                         // Read the next hugepage into the buffer
 
                         let start = std::time::Instant::now();
-                        read_write_hugepage(qpair, (j * result_length + hugepage_idx*input_length + hugepage_increments[hugepage_idx] + read_offset)*LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE_1G, &mut buffer[hugepage_idx], false);
+                        read_write_hugepage_1G(qpair, (j * result_length + hugepage_idx*input_length + hugepage_increments[hugepage_idx] + read_offset)*LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE_1G, &mut buffer[hugepage_idx], false);
                         let duration = start.elapsed();
                         timeForIO+=duration;
 
@@ -211,7 +275,7 @@ pub fn merge_sequential(qpair: &mut NvmeQueuePair, len: usize, buffer: &mut Vec<
             if write_idx > 0 {
                 info!("Output buffer not empty at end, writing {} elements to SSD hugepage {} (written hugepages: {written_hugepages}):", write_idx, j * result_length + write_offset + written_hugepages);
                 let start = std::time::Instant::now();
-                read_write_hugepage(qpair, (j * result_length + write_offset + written_hugepages)*LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE_1G, output_buffer, true);
+                read_write_hugepage_1G(qpair, (j * result_length + write_offset + written_hugepages)*LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE_1G, output_buffer, true);
                 let duration = start.elapsed();
                 info!("Hugepage written: {:?}", u8_to_u64_slice(&mut output_buffer[0..HUGE_PAGE_SIZE_1G]));
                 write_idx = 0;
@@ -234,15 +298,11 @@ pub fn merge_sequential(qpair: &mut NvmeQueuePair, len: usize, buffer: &mut Vec<
         // copying all hugepages to the beginning
         println!("Merge: Copy needed!");
         for i in 0..total_number_hugepages{
-            read_write_hugepage(qpair, (i + last_write_offset)*LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE_1G, output_buffer, false);
-            read_write_hugepage(qpair, i*LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE_1G, output_buffer, true);
+            read_write_hugepage_1G(qpair, (i + last_write_offset)*LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE_1G, output_buffer, false);
+            read_write_hugepage_1G(qpair, i*LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE_1G, output_buffer, true);
         }
     } else {
         println!("Merge: No Copy needed!");
     }
     println!("Time for IO: {:?}", timeForIO);
 }
-
-
-
-

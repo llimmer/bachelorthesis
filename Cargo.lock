@@ -81,6 +81,7 @@ dependencies = [
  "env_logger",
  "lazy_static",
  "log",
+ "once_cell",
  "rand 0.9.0-alpha.2",
  "rayon",
  "thread_local",

@@ -4,7 +4,7 @@ use log::LevelFilter;
 use rand::prelude::{SliceRandom, StdRng};
 use rand::SeedableRng;
 use vroom::QUEUE_LENGTH;
-use bachelorthesis::{clear_chunks, setup_array, sort_merge, CHUNKS_PER_HUGE_PAGE_1G, HUGE_PAGE_SIZE_1G};
+use bachelorthesis::{clear_chunks, setup_array, parallel_sort_merge, CHUNKS_PER_HUGE_PAGE_1G, HUGE_PAGE_SIZE_1G};
 
 fn main() -> Result<(), Box<dyn Error>>{
     env_logger::builder()
