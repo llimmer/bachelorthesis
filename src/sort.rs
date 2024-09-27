@@ -3,6 +3,7 @@ use crate::conversion::*;
 use crate::sorter::{DMATask, IPS2RaSorter, Task};
 use crate::setup::{clear_chunks, setup_array};
 use crate::sequential_sort_merge::sequential_sort_merge;
+use crate::parallel_sort_merge::parallel_sort_merge;
 use crate::parallel::process_task;
 use vroom::{NvmeDevice, NvmeQueuePair, QUEUE_LENGTH};
 use vroom::memory::{Dma, DmaSlice};
@@ -38,11 +39,11 @@ pub fn sort_parallel(arr: &mut [u64]) {
     process_task(&mut initial_task);
 }
 
-pub fn sort_merge(mut nvme: NvmeDevice, len: usize, parallel: bool) -> Result<NvmeDevice, Box<dyn Error>>{
+pub fn sort_merge(nvme: NvmeDevice, len: usize, parallel: bool) -> Result<NvmeDevice, Box<dyn Error>>{
     if !parallel {
         sequential_sort_merge(nvme, len)
     } else {
-        unimplemented!();
+        parallel_sort_merge(nvme, len)
     }
 }
 
