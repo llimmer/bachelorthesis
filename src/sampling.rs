@@ -1,9 +1,11 @@
+use crate::config::*;
+use crate::conversion::*;
+use crate::sort::{read_write_hugepage_1G};
+use crate::sorter::{DMATask, IPS2RaSorter, Task};
 use std::cmp::{max, min};
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
-use crate::config::{K};
-use crate::{read_write_hugepage_1G, u8_to_u64_slice, CHUNKS_PER_HUGE_PAGE_1G, HUGE_PAGES_1G, HUGE_PAGE_SIZE_1G, LBA_PER_CHUNK};
-use crate::sorter::{DMATask, IPS2RaSorter, Task};
+
 
 impl<'a> Task<'_> {
     pub fn sample(&mut self) -> bool {

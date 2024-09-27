@@ -1,8 +1,8 @@
-use std::cmp::min;
+use crate::config::*;
+use crate::conversion::*;
 use vroom::{NvmeQueuePair};
 use vroom::memory::{Dma, DmaSlice};
-use crate::config::{HUGE_PAGE_SIZE_2M, LBA_PER_CHUNK, LBA_SIZE};
-use crate::conversion::{u64_to_u8_slice};
+use std::cmp::min;
 
 pub fn setup_array(arr: &mut [u64], qpair: &mut NvmeQueuePair) {
     let mut buffer = Dma::allocate(HUGE_PAGE_SIZE_2M).unwrap();

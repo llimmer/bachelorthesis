@@ -1,7 +1,8 @@
-use std::io;
-use crate::config::{HUGE_PAGE_SIZE_1G, K, LBA_SIZE, THRESHOLD};
+use crate::config::*;
+use crate::conversion::*;
+use crate::sort::{read_write_hugepage_1G};
 use crate::sorter::{DMATask, IPS2RaSorter, Task};
-use crate::{read_write_hugepage_1G, u8_to_u64_slice, HUGE_PAGE_SIZE_2M, };
+
 
 impl IPS2RaSorter{
     pub fn sequential_rolling_sort(&mut self, task: &mut DMATask) {

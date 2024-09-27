@@ -1,6 +1,5 @@
-use log::{debug, info};
-use crate::config::{K, THRESHOLD};
-use crate::sorter::{DMATask, IPS2RaSorter, Task};
+use crate::config::*;
+use crate::sorter::{IPS2RaSorter, Task};
 
 impl IPS2RaSorter {
     pub fn sequential_rec(&mut self, task: &mut Task) {

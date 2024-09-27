@@ -1,14 +1,12 @@
+use crate::config::*;
+use crate::conversion::*;
+use crate::sort::{find_bucket_ips2ra, read_write_elements, read_write_hugepage_1G};
+use crate::sorter::{DMATask, IPS2RaSorter, Task};
+use vroom::memory::{Dma, DmaSlice};
+use vroom::{NvmeQueuePair};
 use std::cmp::max;
 use std::ptr::write;
 use log::{debug, info};
-use vroom::memory::{Dma, DmaSlice};
-use vroom::{NvmeQueuePair, HUGE_PAGE_SIZE_2M};
-use crate::config::{BLOCKSIZE, K, LBA_SIZE};
-use crate::classification::{find_bucket_ips2ra};
-use crate::conversion::{u8_to_u64, u8_to_u64_slice};
-use crate::sorter::{DMATask, IPS2RaSorter, Task};
-use crate::sort::read_write_elements;
-use crate::{read_write_hugepage_1G, u64_to_u8_slice, LBA_PER_CHUNK};
 
 impl IPS2RaSorter {
     fn calculate_pointers(&mut self) {

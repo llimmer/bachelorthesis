@@ -1,11 +1,7 @@
-use rayon::prelude::*;
-use rayon::scope;
-use std::cell::RefCell;
-use std::rc::Rc;
-use log::debug;
-use thread_local::ThreadLocal;
 use crate::base_case::insertion_sort;
 use crate::sorter::{IPS2RaSorter, Task};
+use std::cell::RefCell;
+use rayon::scope;
 
 thread_local! {
     static SORTER: RefCell<IPS2RaSorter> = RefCell::new(*IPS2RaSorter::new_parallel());

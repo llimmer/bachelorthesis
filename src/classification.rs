@@ -1,8 +1,9 @@
-use log::{debug, info};
+use crate::config::*;
+use crate::conversion::*;
+use crate::sort::find_bucket_ips2ra;
+use crate::sorter::*;
 use vroom::memory::DmaSlice;
-use crate::config::{K, BLOCKSIZE, CHUNKS_PER_HUGE_PAGE_2M, CHUNK_SIZE, LBA_PER_CHUNK, ELEMENTS_PER_CHUNK, HUGE_PAGE_SIZE_2M, LBA_SIZE};
-use crate::conversion::{u64_to_u8_slice, u8_to_u64, u8_to_u64_slice};
-use crate::sorter::{DMATask, IPS2RaSorter, Task};
+use log::{debug, info};
 
 impl IPS2RaSorter {
     pub fn classify(&mut self, task: &mut Task) {
@@ -178,13 +179,6 @@ impl IPS2RaSorter {
         debug!("Done");
         self.classified_elements = write_idx;
     }
-}
-
-
-pub fn find_bucket_ips2ra(input: u64, level: usize) -> usize {
-    let bits_needed = (K as f64).log2().ceil() as u64;
-    let shift = 8 * (7 - level as u64); // Adjust shift so that level 0 extracts the highest 8 bits
-    ((input >> shift) & ((1 << bits_needed) - 1)) as usize
 }
 
 

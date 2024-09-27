@@ -1,8 +1,8 @@
-use std::fmt;
-use std::fmt::{Debug, Display};
+use crate::config::*;
 use vroom::memory::Dma;
 use vroom::{NvmeQueuePair};
-use crate::config::{K, BLOCKSIZE, HUGE_PAGES_1G, HUGE_PAGE_SIZE_1G, THRESHOLD};
+use std::fmt;
+use std::fmt::{Debug, Display};
 pub struct Task<'a> {
     pub arr: &'a mut [u64],
     pub level: usize,

@@ -1,10 +1,10 @@
-use log::{debug, info};
+use crate::config::*;
+use crate::conversion::*;
+use crate::sorter::*;
+use crate::base_case::{insertion_sort};
 use vroom::memory::{Dma, DmaSlice};
 use vroom::{NvmeQueuePair, QUEUE_LENGTH};
-use crate::config::{BLOCKSIZE, K, LBA_PER_CHUNK, LBA_SIZE, THRESHOLD};
-use crate::conversion::{u64_to_u8_slice, u8_to_u64_slice};
-use crate::sorter::{DMATask, IPS2RaSorter, Task};
-use crate::base_case::{insertion_sort};
+use log::{debug, info};
 
 impl IPS2RaSorter {
 

@@ -1,20 +1,20 @@
+use crate::config::*;
+use crate::conversion::*;
+use crate::sorter::{DMATask, IPS2RaSorter, Task};
+use crate::setup::{clear_chunks, setup_array};
+use crate::sequential_sort_merge::sequential_sort_merge;
+use crate::parallel::process_task;
+use vroom::{NvmeDevice, NvmeQueuePair, QUEUE_LENGTH};
+use vroom::memory::{Dma, DmaSlice};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize};
 use std::{io, thread};
-use log::{debug, error, info};
-use crate::config::{BLOCKSIZE, CHUNKS_PER_HUGE_PAGE_1G, CHUNK_SIZE, HUGE_PAGES_1G, HUGE_PAGE_SIZE_1G, K, LBA_PER_CHUNK, NUM_THREADS, THRESHOLD, HUGE_PAGES_2M, HUGE_PAGE_SIZE_2M};
-use crate::parallel::process_task;
-use crate::sorter::{DMATask, IPS2RaSorter, Task};
-use crate::setup::{clear_chunks, setup_array};
 use std::error::Error;
 use rand::prelude::{SliceRandom, StdRng};
 use rand::SeedableRng;
-use vroom::memory::{Dma, DmaSlice};
-use vroom::{NvmeDevice, NvmeQueuePair, QUEUE_LENGTH};
-use crate::conversion::u8_to_u64_slice;
-use crate::LBA_SIZE;
-use crate::sequential_sort_merge::sequential_sort_merge;
+use log::{debug, error, info};
+
 
 pub fn sort(arr: &mut [u64]) {
     let mut task = Task::new(arr, 0, 0, 8);
@@ -65,6 +65,12 @@ pub fn rolling_sort(mut nvme: NvmeDevice, len: usize, parallel: bool) -> Result<
     }
 
     Ok(nvme)
+}
+
+pub fn find_bucket_ips2ra(input: u64, level: usize) -> usize {
+    let bits_needed = (K as f64).log2().ceil() as u64;
+    let shift = 8 * (7 - level as u64); // Adjust shift so that level 0 extracts the highest 8 bits
+    ((input >> shift) & ((1 << bits_needed) - 1)) as usize
 }
 
 pub fn read_write_elements(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, target_lba: usize, target_offset: usize, num_elements: usize, write: bool) {

@@ -1,11 +1,12 @@
 use crate::config::*;
-use std::error::Error;
+use crate::conversion::*;
+use crate::sort::read_write_hugepage_1G;
+use crate::sorter::{IPS2RaSorter, Task};
 use vroom::memory::Dma;
 use vroom::{NvmeDevice, NvmeQueuePair, QUEUE_LENGTH};
-use crate::sorter::{IPS2RaSorter, Task};
-use crate::{read_write_hugepage_1G, u8_to_u64_slice};
-use std::collections::BinaryHeap;
+use std::error::Error;
 use std::io;
+use std::collections::BinaryHeap;
 use std::time::Duration;
 use log::{debug, info};
 

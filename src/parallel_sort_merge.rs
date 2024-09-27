@@ -1,11 +1,12 @@
-use std::error::Error;
+use crate::config::*;
+use crate::conversion::*;
+use crate::sort::{read_write_elements, read_write_hugepage_1G, read_write_hugepage_2M};
+use crate::sorter::{IPS2RaSorter, Task};
 use vroom::{NvmeDevice, NvmeQueuePair, QUEUE_LENGTH};
 use vroom::memory::Dma;
-use crate::config::*;
-use crate::{read_write_hugepage_1G, u64_to_u8_slice, u8_to_u64_slice};
-use crate::sorter::{IPS2RaSorter, Task};
-use std::cell::RefCell;
+use std::error::Error;
 use std::cmp::{min};
+use std::cell::RefCell;
 use std::cmp::Ordering::{Equal, Greater, Less};
 use std::collections::{BinaryHeap};
 use std::{mem};
@@ -13,9 +14,6 @@ use std::sync::{Arc, Mutex};
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use rayon::{ThreadPoolBuilder};
-use crate::sort::{read_write_elements, read_write_hugepage_2M};
-use crate::config::NUM_THREADS;
-use crate::{u8_to_u64, HUGE_PAGE_SIZE_2M, LBA_SIZE};
 
 thread_local! {
     static SORTER: RefCell<IPS2RaSorter> = RefCell::new(*IPS2RaSorter::new_parallel());

@@ -1,18 +1,3 @@
-use log::LevelFilter;
-use log::{debug, info, warn, error};
-use rand::prelude::SliceRandom;
-use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng, thread_rng};
-use std::cmp::max;
-use std::io;
-use std::time::Instant;
-use rand::seq::index::sample;
-use std::error::Error;
-use vroom::memory::{Dma, DmaSlice};
-use vroom::QUEUE_LENGTH;
-use bachelorthesis::sort::read_write_hugepage_1G;
-use bachelorthesis::{parallel_sort_merge, K, LBA_SIZE};
-
 mod sampling;
 mod base_case;
 mod classification;
@@ -28,10 +13,21 @@ mod setup;
 mod parallel_sort_merge;
 mod rolling_sort;
 mod sequential_sort_merge;
-use crate::config::{CHUNKS_PER_HUGE_PAGE_1G, CHUNKS_PER_HUGE_PAGE_2M, CHUNK_SIZE, ELEMENTS_PER_CHUNK, HUGE_PAGES_1G, HUGE_PAGE_SIZE_1G, HUGE_PAGE_SIZE_2M, LBA_PER_CHUNK};
-use crate::conversion::{u64_to_u8_slice, u8_to_u64, u8_to_u64_slice};
-use crate::setup::{clear_chunks, setup_array};
+
+use crate::config::*;
+use crate::conversion::*;
+use crate::sort::read_write_hugepage_1G;
 use crate::parallel_sort_merge::parallel_sort_merge;
+use crate::setup::{clear_chunks};
+use vroom::memory::{Dma, DmaSlice};
+use vroom::QUEUE_LENGTH;
+use std::error::Error;
+use std::io;
+use rand::prelude::SliceRandom;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+use log::LevelFilter;
+
 
 fn verify_sorted(arr: &[u64]) {
     for i in 1..arr.len() {
