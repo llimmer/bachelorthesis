@@ -40,11 +40,17 @@ pub fn parallel_sort_merge(mut nvme: NvmeDevice, len: usize) -> Result<NvmeDevic
     let mut clenup_buffer = Dma::allocate(HUGE_PAGE_SIZE_2M)?;
     let nvme = initialize_thread_pool(nvme, num_hugepages);
 
-    println!("Starting parallel sorting");
+    println!("Starting parallel sorting. Len: {}, Max: {}, output_offset: {}", len, max, sort_offset);
     let initial_separators = sort_parallel(len, num_hugepages, sort_offset);
+    println!("Done");
+
+    // read line from stdin
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input).unwrap();
 
     println!("Starting parallel merging");
     merge_parallel(&mut cleanup_qpair, &mut clenup_buffer, initial_separators, len, max, sort_offset, merge_offset);
+    println!("Done");
 
     Ok(nvme)
 }
@@ -114,6 +120,7 @@ pub fn sort_parallel(len: usize, num_hugepages: usize, write_offset: usize) -> V
             let local_separator = compute_local_separators(u64slice, NUM_THREADS - 1);
             sorter.sort_buffer = Some(buffer);
             sorter.read_write_sort_buffer_1G(i * LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G + write_offset, true);
+            println!("Thread {} finished sorting hugepage {}. Writing to lba {}. Local separators: {:?}. First elements: {:?}", rayon::current_thread_index().unwrap(), i, i * LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G + write_offset, local_separator, u8_to_u64_slice(&mut sorter.sort_buffer.as_mut().unwrap()[0..128]));
 
             // push to local separators at idx i.
             let mut local_separators_locked = local_separators.lock().unwrap();
@@ -167,6 +174,7 @@ pub fn merge_parallel(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, initial_s
             next_separators.push(global_separators);
             println!("Next separators: {:?}", next_separators);
         }
+        separators = next_separators;
     }
 }
 
@@ -298,11 +306,11 @@ impl IPS2RaSorter {
                 continue;
             }
             let lba = calculate_lba(indices[i].0, start_lba, i, input_length_byte);
-            println!("i={}, reading hugepage at lba={}", i, lba);
+            //println!("i={}, reading hugepage at lba={}", i, lba);
             read_write_hugepage_2M(qpair, lba, &mut buffers[i], false);
-            println!("Buffer read: {:?}", u8_to_u64_slice(&mut buffers[i][0..1024 * 8]));
+            //println!("Buffer read: {:?}", u8_to_u64_slice(&mut buffers[i][0..1024 * 8]));
             // push first element into minHeap
-            println!("Pushing first element {} (Array: {}) to minHeap", u8_to_u64(&mut buffers[i][output_offset * 8..output_offset * 8 + 8]), i);
+            //println!("Pushing first element {} (Array: {}) to minHeap", u8_to_u64(&mut buffers[i][output_offset * 8..output_offset * 8 + 8]), i);
             minHeap.push(HeapEntry { value: u8_to_u64(&mut buffers[i][output_offset * 8..output_offset * 8 + 8]), array: i });
 
             write_elements[i] += 1;
@@ -321,15 +329,15 @@ impl IPS2RaSorter {
                     write_idx += 1;
 
                     if write_idx * 8 % HUGE_PAGE_SIZE_1G == 0 {
-                        println!("Output buffer is full. Write_idx: {write_idx}, tailsize: {tailsize}, total_length: {total_length}");
+                        //println!("Output buffer is full. Write_idx: {write_idx}, tailsize: {tailsize}, total_length: {total_length}");
                         if write_idx + tailsize <= total_length {
-                            println!("Output buffer is full, writing whole hugepage to ssd");
+                            //println!("Output buffer is full, writing whole hugepage to ssd");
                             read_write_hugepage_1G(qpair, output_lba + written_lba, &mut output_buffer, true);
                             written_lba += LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G;
                         } else {
                             // write all but tailsize elements to ssd
                             let elements_to_write = total_length - tailsize;
-                            println!("Output buffer is full, writing {elements_to_write} elements to ssd");
+                            //println!("Output buffer is full, writing {elements_to_write} elements to ssd");
                             read_write_elements(qpair, &mut output_buffer, output_lba + written_lba, output_offset, elements_to_write, true);
                             written_lba += elements_to_write / LBA_SIZE;
                             assert_eq!((elements_to_write+output_offset) % LBA_SIZE, 0);
@@ -343,7 +351,7 @@ impl IPS2RaSorter {
                         // check if we need to load new hugepage
                         if idx_write * 8 % HUGE_PAGE_SIZE_2M == 0 {
                             let lba = calculate_lba(idx_write, start_lba, array, input_length_byte);
-                            println!("Reading new hugepage for array {} starting at lba {}", array, lba);
+                            //println!("Reading new hugepage for array {} starting at lba {}", array, lba);
                             read_write_hugepage_2M(qpair, lba, &mut buffers[array], false);
                         }
                         let next_element = u8_to_u64(&mut buffers[array][(idx_write % (HUGE_PAGE_SIZE_2M / 8)) * 8..(idx_write % (HUGE_PAGE_SIZE_2M / 8)) * 8 + 8]);
@@ -353,11 +361,11 @@ impl IPS2RaSorter {
 
                         if let Some(min) = minHeap.peek() { // check if new element is smaller than current min
                             if next_element <= min.value {
-                                println!("Next element {} <= current min {}", next_element, min.value);
+                                //println!("Next element {} <= current min {}", next_element, min.value);
                                 next_min = next_element;
                                 continue 'inner;
                             } else {
-                                println!("Next element {} > current min {} => Pushing to minheap", next_element, min.value);
+                                //println!("Next element {} > current min {} => Pushing to minheap", next_element, min.value);
                                 minHeap.push(HeapEntry { value: next_element, array });
                                 break 'inner;
                             }
@@ -375,10 +383,10 @@ impl IPS2RaSorter {
         }
         let mut elements_to_write = write_idx - tailsize;
         if elements_to_write > 0 {
-            println!("Final writing {elements_to_write} elements from output to lba {} (write_idx: {}, tailsize: {})", output_lba + written_lba, write_idx, tailsize);
+            println!("Thread {}: final writing {elements_to_write} elements from output to lba {} (write_idx: {}, tailsize: {})", rayon::current_thread_index().unwrap(), output_lba + written_lba, write_idx, tailsize);
             read_write_elements(qpair, &mut output_buffer, output_lba + written_lba, 0, elements_to_write, true);
         }
-        println!("remaining elements: {:?}", u8_to_u64_slice(&mut output_buffer[elements_to_write * 8..write_idx * 8]));
+        println!("Thread {}: remaining elements: {:?}", rayon::current_thread_index().unwrap(), u8_to_u64_slice(&mut output_buffer[elements_to_write * 8..write_idx * 8]));
         u8_to_u64_slice(&mut output_buffer[elements_to_write * 8..write_idx * 8]).to_vec()
     }
 }
@@ -398,7 +406,7 @@ impl IPS2RaSorter {
     }
 
     fn binary_search_ext(&mut self, element: &u64, start_lba: usize, length: usize) -> Result<usize, usize> {
-        println!("Thread {} binary searching for element {}", rayon::current_thread_index().unwrap(), element);
+        println!("Thread {} binary searching for element {}. Start_lba: {}, length: {}", rayon::current_thread_index().unwrap(), element, start_lba, length);
         let mut size = length;
         let mut left = 0;
         let mut right = length;
@@ -406,9 +414,10 @@ impl IPS2RaSorter {
         while left < right {
             let half = left + size / 2;
             let loaded_element = self.load_element(start_lba, half);
-            println!("Element: {}, Half: {}, Left: {}, Right: {}, Loaded Element: {}", element, half, left, right, loaded_element);
+            //println!("Element: {}, Half: {}, Left: {}, Right: {}, Loaded Element: {} (lba: {})", element, half, left, right, loaded_element, start_lba);
             match loaded_element.cmp(element) {
                 Equal => {
+                    println!("Thread {} found element {} at index {}", rayon::current_thread_index().unwrap() , element, half);
                     return Ok(half);
                 }
                 Less => {
@@ -428,7 +437,7 @@ impl IPS2RaSorter {
         assert!(self.sort_buffer.is_some());
         let lba = idx * 8 / LBA_SIZE + start_lba;
         let offset = idx % (LBA_SIZE / 8);
-        read_write_hugepage_1G(self.qpair.as_mut().unwrap(), lba, self.sort_buffer.as_mut().unwrap(), false);
+        read_write_elements(self.qpair.as_mut().unwrap(), self.sort_buffer.as_mut().unwrap(), lba, offset, 1, false);
         //println!("start_lba: {}, offset: {}, read: {:?}", lba, offset, u8_to_u64(&mut self.sort_buffer.as_mut().unwrap()[offset*8..offset*8 + 8]));
         u8_to_u64(&mut self.sort_buffer.as_mut().unwrap()[offset * 8..offset * 8 + 8])
     }

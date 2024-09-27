@@ -3,7 +3,7 @@ mod sequential_merge{
     use log::info;
     use vroom::memory::{Dma, DmaSlice};
     use vroom::QUEUE_LENGTH;
-    use bachelorthesis::{clear_chunks, merge_sequential, u64_to_u8_slice, u8_to_u64_slice, CHUNKS_PER_HUGE_PAGE_1G, CHUNK_SIZE, HUGE_PAGES_1G, HUGE_PAGE_SIZE_1G, LBA_PER_CHUNK};
+    use bachelorthesis::{clear_chunks, u64_to_u8_slice, u8_to_u64_slice, CHUNKS_PER_HUGE_PAGE_1G, CHUNK_SIZE, HUGE_PAGES_1G, HUGE_PAGE_SIZE_1G, LBA_PER_CHUNK};
 
     #[test]
     fn small_sequential(){

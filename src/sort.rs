@@ -82,6 +82,8 @@ pub fn read_write_elements(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, targ
     let remaining_lba = num_lba % LBA_PER_CHUNK;
     let max_lba_per_queue = QUEUE_LENGTH*LBA_PER_CHUNK;
 
+    //println!("{} {} lba blocks {} lba {}", if write {"Writing"} else {"Reading"}, num_lba, if write {"to"} else {"from"}, target_lba);
+
     //println!("Qpair at start: {}", qpair.sub_queue.is_empty());
 
 
@@ -94,11 +96,12 @@ pub fn read_write_elements(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, targ
         // request/write max_lba_per_queue lbas
         let mut sum = 0;
         for i in 0..max_lba_per_queue/LBA_PER_CHUNK {
-            let tmp = qpair.submit_io(&mut buffer.slice(i*CHUNK_SIZE..(i+1)*CHUNK_SIZE), (i*LBA_PER_CHUNK + target_offset) as u64, write);
+            let tmp = qpair.submit_io(&mut buffer.slice(i*CHUNK_SIZE..(i+1)*CHUNK_SIZE), (i*LBA_PER_CHUNK + target_lba) as u64, write);
+            //println!("Submitted {} requests, lba: {} (i*LBA_PER_CHUNK: {} + target_lba: {})", tmp, i*LBA_PER_CHUNK + target_lba, i*LBA_PER_CHUNK, target_lba);
             assert_eq!(tmp, 1);
             sum += tmp;
             if qpair.sub_queue.is_full(){
-                println!("Queue full after {} requests", sum);
+                //println!("Queue full after {} requests", sum);
                 break;
             }
         }
@@ -106,13 +109,15 @@ pub fn read_write_elements(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, targ
 
         for i in 0..remaining_chunks {
             qpair.complete_io(1);
-            let tmp = qpair.submit_io(&mut buffer.slice((i+sum)*CHUNK_SIZE..(i+1+sum)*CHUNK_SIZE),  (i*LBA_PER_CHUNK + target_offset + sum*LBA_PER_CHUNK) as u64, write);
+            let tmp = qpair.submit_io(&mut buffer.slice((i+sum)*CHUNK_SIZE..(i+1+sum)*CHUNK_SIZE),  (i*LBA_PER_CHUNK + target_lba + sum*LBA_PER_CHUNK) as u64, write);
+            //println!("Submitted {} requests, lba: {} (i*LBA_PER_CHUNK: {} + target_lba: {} + sum*LBA_PER_CHUNK: {})", tmp, i*LBA_PER_CHUNK + target_lba + sum*LBA_PER_CHUNK, i*LBA_PER_CHUNK, target_offset, sum*LBA_PER_CHUNK);
             assert_eq!(tmp, 1);
         }
 
         for i in 0..remaining_lba {
             qpair.complete_io(1);
-            let tmp = qpair.submit_io(&mut buffer.slice((i+sum+remaining_chunks)*CHUNK_SIZE..(i+1+sum+remaining_chunks)*CHUNK_SIZE + LBA_SIZE),  (i + target_offset + (sum+remaining_chunks)*LBA_PER_CHUNK) as u64, write);
+            let tmp = qpair.submit_io(&mut buffer.slice((i+sum+remaining_chunks)*CHUNK_SIZE..(i+1+sum+remaining_chunks)*CHUNK_SIZE + LBA_SIZE),  (i + target_lba + (sum+remaining_chunks)*LBA_PER_CHUNK) as u64, write);
+            //println!("Submitted {} requests, lba: {}", tmp, i + target_lba + (sum+remaining_chunks)*LBA_PER_CHUNK);
             assert_eq!(tmp, 1);
         }
 
@@ -133,16 +138,16 @@ impl IPS2RaSorter{
     pub fn read_write_sort_buffer_1G(&mut self, lba_offset: usize, write: bool){
         assert!(self.qpair.is_some(), "Queue pair not initialized");
         assert!(self.sort_buffer.is_some(), "Sort buffer not initialized");
-        let mut qpair = self.qpair.as_mut().unwrap();
-        let mut sort_buffer = self.sort_buffer.as_mut().unwrap();
+        let qpair = self.qpair.as_mut().unwrap();
+        let sort_buffer = self.sort_buffer.as_mut().unwrap();
         read_write_elements(qpair, sort_buffer, lba_offset, 0, HUGE_PAGE_SIZE_1G/8, write);
     }
 
     pub fn read_write_sort_buffer_2M(&mut self, lba_offset: usize, write: bool){
         assert!(self.qpair.is_some(), "Queue pair not initialized");
         assert!(self.sort_buffer.is_some(), "Sort buffer not initialized");
-        let mut qpair = self.qpair.as_mut().unwrap();
-        let mut sort_buffer = self.sort_buffer.as_mut().unwrap();
+        let qpair = self.qpair.as_mut().unwrap();
+        let sort_buffer = self.sort_buffer.as_mut().unwrap();
         read_write_elements(qpair, sort_buffer, lba_offset, 0, HUGE_PAGE_SIZE_2M/8, write);
     }
 }

@@ -47,7 +47,17 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     clear_chunks(CHUNKS_PER_HUGE_PAGE_1G*5, &mut qpair);
 
-    let mut data: Vec<u64> = (0..8192 as u64).map(|x| 1*x).collect();
+    let mut data: Vec<u64> = (0..HUGE_PAGE_SIZE_1G as u64/8).map(|x| 1*x).collect();
+    buffer_big[0..data.len()*8].copy_from_slice(u64_to_u8_slice(&mut data));
+
+    println!("Preparation done");
+    // read line from stdin
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+
+    read_write_hugepage_1G(&mut qpair, 2*CHUNKS_PER_HUGE_PAGE_1G*LBA_PER_CHUNK, &mut buffer_big, true);
+
+    /* let mut data: Vec<u64> = (0..8192 as u64).map(|x| 1*x).collect();
     let mut data2: Vec<u64> = (0..8192 as u64).map(|x| 1*x).collect();
     //let mut data3: Vec<u64> = (0..8192 as u64).map(|x| 3*x).collect();
 
@@ -68,7 +78,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
 
-    parallel_sort_merge(nvme, 8192*2)?;
+    parallel_sort_merge(nvme, 8192*2)?;*/
 
     return Ok(());
 
