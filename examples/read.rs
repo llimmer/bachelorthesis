@@ -1,12 +1,37 @@
-use std::slice;
-use vroom::HUGE_PAGE_SIZE_2M;
-use vroom::memory::Dma;
+use std::{env, process, slice};
 
 pub fn main(){
-    let mut nvme = vroom::init("0000:03:00.0").unwrap();
+    let mut args = env::args();
+    args.next();
 
-    let mut buffer: [u8; 4096] = [0; 4096];
-    nvme.read_copied(&mut buffer, 0).unwrap();
+    let pci_addr = match args.next() {
+        Some(arg) => arg,
+        None => {
+            eprintln!("Usage: cargo run --example read <pci bus id> <length?> <start_lba?>");
+            process::exit(1);
+        }
+    };
+
+    let len = match args.next() {
+        Some(arg) => arg.parse::<usize>().unwrap(),
+        None => {
+            eprintln!("Usage: cargo run --example read <pci bus id> <length?> <start_lba?>\nNo length provided. Defaulting to 1024 elements");
+            1024
+        }
+    };
+
+    let start_lba = match args.next() {
+        Some(arg) => arg.parse::<usize>().unwrap(),
+        None => {
+            eprintln!("Usage: cargo run --example read <pci bus id> <length?> <start_lba?>\nNo start_lba provided. Defaulting to 0");
+            0
+        }
+    };
+
+    let mut nvme = vroom::init(&pci_addr).unwrap();
+
+    let mut buffer: Vec<u8> = vec![0u8; len*8];
+    nvme.read_copied(&mut buffer, start_lba as u64).unwrap();
 
     println!("read: {:?}", u8_to_u64_slice(&mut buffer));
 }

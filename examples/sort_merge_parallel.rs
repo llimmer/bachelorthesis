@@ -21,13 +21,15 @@ fn main() -> Result<(), Box<dyn Error>>{
         }
     };
 
-    let len = match args.next() {
+    let num_hugepages = match args.next() {
         Some(arg) => arg.parse::<usize>().unwrap(),
         None => {
-            eprintln!("Usage: cargo run --example example_sort_merge <pci bus id> <len?>\nNo length provided. Defaulting to 2 1GiB Hugepages.");
-            2 * HUGE_PAGE_SIZE_1G/8
+            eprintln!("Usage: cargo run --example example_sort_merge <pci bus id> <num_hugepages?>\nNo length provided. Defaulting to 3 1GiB Hugepages.");
+            3
         }
     };
+
+    let len = num_hugepages * HUGE_PAGE_SIZE_1G/8;
 
     let mut nvme = vroom::init(&pci_addr)?;
     nvme = sort_merge(nvme, len, true)?;
