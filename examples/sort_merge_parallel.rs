@@ -7,6 +7,7 @@ fn main() -> Result<(), Box<dyn Error>>{
     env_logger::builder()
         .filter_level(LevelFilter::Info)
         .init();
+    env::set_var("RUST_BACKTRACE", "1");
 
     // Preparing data
     let mut args = env::args();
