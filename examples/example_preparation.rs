@@ -27,8 +27,6 @@ pub fn main() {
         }
     };
 
-    let len = num_hugepages * HUGE_PAGE_SIZE_1G/8;
-
     let mut nvme = vroom::init(&pci_addr).unwrap();
     let mut qpair = nvme.create_io_queue_pair(QUEUE_LENGTH).unwrap();
 
@@ -36,10 +34,10 @@ pub fn main() {
     let mut buffer = Dma::allocate(HUGE_PAGE_SIZE_1G).unwrap();
 
     println!("Clearing chunks");
-    clear_chunks((len+2)*CHUNKS_PER_HUGE_PAGE_1G, &mut qpair);
+    clear_chunks((num_hugepages+2)*CHUNKS_PER_HUGE_PAGE_1G, &mut qpair);
     println!("Done");
 
-    for i in 0..len{
+    for i in 0..num_hugepages{
         println!("Preparing hugepage {}", i);
         //let mut data: Vec<u64> = (0..HUGE_PAGE_SIZE_1G/8).map(|_| rng.gen_range(0..u64::MAX)).collect(); // Random data
         let mut data: Vec<u64> = (0..HUGE_PAGE_SIZE_1G as u64/8).collect(); // Sequential data -> shuffle
