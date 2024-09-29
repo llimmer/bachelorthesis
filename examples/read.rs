@@ -28,12 +28,29 @@ pub fn main(){
         }
     };
 
+    let elements_per_line = match args.next() {
+        Some(arg) => arg.parse::<usize>().unwrap(),
+        None => {
+            eprintln!("Usage: cargo run --example read <pci bus id> <length?> <start_lba?> <elements_per_line?>\nNo elements_per_line provided. Defaulting to all");
+            0
+        }
+    };
+
     let mut nvme = vroom::init(&pci_addr).unwrap();
 
     let mut buffer: Vec<u8> = vec![0u8; len*8];
     nvme.read_copied(&mut buffer, start_lba as u64).unwrap();
-
-    println!("read: {:?}", u8_to_u64_slice(&mut buffer));
+    if elements_per_line == 0 {
+        println!("Read:\n{:?}", u8_to_u64_slice(&mut buffer));
+    } else {
+        println!("Read:");
+        for i in 0..len/elements_per_line {
+            println!("{:?}", u8_to_u64_slice(&mut buffer[i*8 * elements_per_line..(i + 1) * 8 * elements_per_line]));
+        }
+        if len % elements_per_line != 0 {
+            println!("{:?}", u8_to_u64_slice(&mut buffer[(len/elements_per_line) * elements_per_line*8..]));
+        }
+    }
 }
 
 pub fn u8_to_u64_slice(bytes: &mut [u8]) -> &mut [u64] {
