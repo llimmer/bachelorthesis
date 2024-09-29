@@ -22,7 +22,7 @@ thread_local! {
 
 pub fn parallel_sort_merge(mut nvme: NvmeDevice, len: usize) -> Result<NvmeDevice, Box<dyn Error>> {
     let num_hugepages = (len + HUGE_PAGE_SIZE_1G / 8 - 1) / (HUGE_PAGE_SIZE_1G / 8);
-    println!("Sorting and merging {} hugepages", num_hugepages);
+    info!("Sorting and merging {} hugepages", num_hugepages);
 
     let max = (num_hugepages as f64).log((NUM_THREADS) as f64).ceil() as usize;
     let sort_offset =
@@ -42,17 +42,17 @@ pub fn parallel_sort_merge(mut nvme: NvmeDevice, len: usize) -> Result<NvmeDevic
     let mut clenup_buffer = Dma::allocate(HUGE_PAGE_SIZE_2M)?;
     let nvme = initialize_thread_pool(nvme, num_hugepages);
 
-    println!("Starting parallel sorting. Len: {}, Max: {}, output_offset: {}", len, max, sort_offset);
+    info!("Starting parallel sorting. Len: {}, Max: {}, output_offset: {}", len, max, sort_offset);
     let initial_separators = sort_parallel(len, num_hugepages, sort_offset);
-    println!("Done");
+    info!("Done");
 
     // read line from stdin
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input).unwrap();
+    //let mut input = String::new();
+    // std::io::stdin().read_line(&mut input).unwrap();
 
-    println!("Starting parallel merging");
+    info!("Starting parallel merging");
     merge_parallel(&mut cleanup_qpair, &mut clenup_buffer, initial_separators, len, num_hugepages, max, sort_offset, merge_offset);
-    println!("Done");
+    info!("Done");
 
     Ok(nvme)
 }
@@ -86,7 +86,7 @@ fn initialize_thread_pool(nvme: NvmeDevice, num_buffer: usize) -> NvmeDevice {
             *sorter_ref = *IPS2RaSorter::new_ext_sequential(qpair, buffers, sort_buffer);
         });
 
-        println!("Thread {} initialized sorter", thread_id);
+        info!("Thread {} initialized sorter", thread_id);
     });
 
     // Return the modified NVMe device
@@ -102,7 +102,7 @@ pub fn sort_parallel(len: usize, num_hugepages: usize, write_offset: usize) -> V
     (0..num_hugepages).into_par_iter().for_each(|i| {
         SORTER.with(|sorter| {
             let mut sorter = sorter.borrow_mut();
-            println!("Thread {} starting sort of hugepage {}.", rayon::current_thread_index().unwrap(), i);
+            info!("Thread {} starting sort of hugepage {}.", rayon::current_thread_index().unwrap(), i);
             sorter.read_write_sort_buffer_1G(i * LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G, false);
 
             let mut buffer = sorter.sort_buffer.take().unwrap();
@@ -123,7 +123,7 @@ pub fn sort_parallel(len: usize, num_hugepages: usize, write_offset: usize) -> V
             let local_separator = compute_local_separators(u64slice, NUM_THREADS - 1);
             sorter.sort_buffer = Some(buffer);
             sorter.read_write_sort_buffer_1G(i * LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G + write_offset, true);
-            println!("Thread {} finished sorting hugepage {}. Writing to lba {}. Local separators: {:?}. First elements: {:?}", rayon::current_thread_index().unwrap(), i, i * LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G + write_offset, local_separator, u8_to_u64_slice(&mut sorter.sort_buffer.as_mut().unwrap()[0..128]));
+            info!("Thread {} finished sorting hugepage {}. Writing to lba {}. Local separators: {:?}. First elements: {:?}", rayon::current_thread_index().unwrap(), i, i * LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G + write_offset, local_separator, u8_to_u64_slice(&mut sorter.sort_buffer.as_mut().unwrap()[0..128]));
 
             // push to local separators at idx i.
             let mut local_separators_locked = local_separators.lock().unwrap();
@@ -137,14 +137,14 @@ pub fn sort_parallel(len: usize, num_hugepages: usize, write_offset: usize) -> V
 }
 
 pub fn merge_parallel(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, initial_separators: Vec<Vec<u64>>, len: usize, mut num_hugepages: usize, max: usize, mut start_lba: usize, mut output_lba: usize) {
-    info!("Total number of hugepages: {num_hugepages}, start_lba: {start_lba}, output_lba: {output_lba}");
+    debug!("Total number of hugepages: {num_hugepages}, start_lba: {start_lba}, output_lba: {output_lba}");
 
     assert_eq!(initial_separators.len(), num_hugepages);
 
     let mut separators = initial_separators;
 
     for i in 0..max {
-        println!("\n\ni: {i}, start_lba: {start_lba}, output_lba: {output_lba}");
+        info!("\n\ni: {i}, start_lba: {start_lba}, output_lba: {output_lba}");
 
         let input_length = NUM_THREADS.pow(i as u32);
         let result_length = input_length * NUM_THREADS;
@@ -154,10 +154,10 @@ pub fn merge_parallel(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, initial_s
         let mut flattened_separators: Vec<u64> = Vec::with_capacity((NUM_THREADS - 1) * min(NUM_THREADS, remaining_hugepages)); // TODO: double check
 
         for j in 0..(num_hugepages + result_length - 1) / result_length {
-            println!("\nj: {j}, input_length: {input_length}, result_length: {result_length}");
+            info!("\nj: {j}, input_length: {input_length}, result_length: {result_length}");
             // read line from stdin
-            let mut input = String::new();
-            io::stdin().read_line(&mut input).unwrap();
+            //let mut input = String::new();
+            //io::stdin().read_line(&mut input).unwrap();
             let cur_num_hugepages =
                 if remaining_hugepages >= result_length {
                     result_length
@@ -168,20 +168,20 @@ pub fn merge_parallel(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, initial_s
             if cur_num_hugepages <= 1 {
                 break;
             }
-            println!("Cur num hugepages: {cur_num_hugepages}");
+            info!("Cur num hugepages: {cur_num_hugepages}");
             flattened_separators.clear();
             for vec in separators[j * NUM_THREADS..(j + 1) * NUM_THREADS].iter() {
                 flattened_separators.extend(vec);
             }
             flattened_separators.sort_unstable();
-            info!("Flattened separators: {:?}", flattened_separators);
+            debug!("Flattened separators: {:?}", flattened_separators);
 
             let global_separators = compute_local_separators(&flattened_separators, NUM_THREADS - 1);
-            info!("Global separators: {:?}", global_separators);
+            debug!("Global separators: {:?}", global_separators);
 
             prepare_thread_merge(qpair, buffer, &global_separators, start_lba, output_lba + j * result_length * CHUNKS_PER_HUGE_PAGE_1G * LBA_PER_CHUNK, input_length, cur_num_hugepages);
             next_separators.push(global_separators);
-            info!("Next separators: {:?}", next_separators);
+            debug!("Next separators: {:?}", next_separators);
         }
         separators = next_separators;
         let tmp = start_lba;
@@ -193,7 +193,7 @@ pub fn merge_parallel(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, initial_s
 
 
 fn prepare_thread_merge(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, global_separators: &Vec<u64>, start_lba: usize, write_lba: usize, input_length: usize, remaining_hugepages: usize) {
-    println!("Preparing thread merge with global separators: {:?}, start_lba: {}, write_lba: {}, input_length: {}, remaining_hugepages: {}", global_separators, start_lba, write_lba, input_length, remaining_hugepages);
+    info!("Preparing thread merge with global separators: {:?}, start_lba: {}, write_lba: {}, input_length: {}, remaining_hugepages: {}", global_separators, start_lba, write_lba, input_length, remaining_hugepages);
     let remainders: Arc<Mutex<Vec<Vec<u64>>>> = Arc::new(Mutex::new(vec![Vec::new(); NUM_THREADS]));
 
     let local_indices: Vec<Vec<usize>> = (0..remaining_hugepages).into_par_iter().map(|x| {
@@ -204,10 +204,10 @@ fn prepare_thread_merge(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, global_
             }
         )
     }).collect();
-    info!("Local indices: {:?}", local_indices);
+    debug!("Local indices: {:?}", local_indices);
 
     let ranges = transform_indices_to_ranges(&local_indices, input_length * HUGE_PAGE_SIZE_1G / 8, NUM_THREADS);
-    info!("Ranges: {:?}", ranges);
+    debug!("Ranges: {:?}", ranges);
 
     //pre-compute total ranges
     let mut total_ranges: Vec<(usize, usize)> = Vec::with_capacity(NUM_THREADS);
@@ -217,17 +217,17 @@ fn prepare_thread_merge(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, global_
         sum += ranges[i].iter().map(|(start, end)| end - start).sum::<usize>();
         total_ranges.push((start, sum));
     }
-    info!("Total ranges: {:?}", total_ranges);
+    debug!("Total ranges: {:?}", total_ranges);
 
     (0..NUM_THREADS).into_par_iter().for_each(|thread_id| {
         let merge_result = SORTER.with(|sorter| {
             let mut sorter = sorter.borrow_mut();
             let mut output_lba_offset = if thread_id == 0 { 0 } else { total_ranges[thread_id - 1].1 * 8 / LBA_SIZE };
-            println!("output_lba_offset: {output_lba_offset} (total_ranges[thread_id - 1].1: {} * 8 / LBA_SIZE: {LBA_SIZE})", if thread_id == 0 {0} else {total_ranges[thread_id - 1].1});
+            info!("output_lba_offset: {output_lba_offset} (total_ranges[thread_id - 1].1: {} * 8 / LBA_SIZE: {LBA_SIZE})", if thread_id == 0 {0} else {total_ranges[thread_id - 1].1});
 
             // read line from stdin
-            let mut input = String::new();
-            std::io::stdin().read_line(&mut input).unwrap();
+            //let mut input = String::new();
+            //std::io::stdin().read_line(&mut input).unwrap();
 
             sorter.thread_merge(
                 &ranges[thread_id],
@@ -244,18 +244,18 @@ fn prepare_thread_merge(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, global_
     });
 
     // Cleanup:
-    println!("Starting cleanup");
+    info!("Starting cleanup");
     let mut remainders_locked = remainders.lock().unwrap();
     let mut sum = 0;
     // read line from stdin
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input).unwrap();
+    //let mut input = String::new();
+    //std::io::stdin().read_line(&mut input).unwrap();
     for i in 0..NUM_THREADS {
         sum += total_ranges[i].1 - total_ranges[i].0;
         let tailsize = sum % (LBA_SIZE / 8);
         if tailsize > 0 {
             let lba = (sum - tailsize) / (LBA_SIZE / 8) + write_lba;
-            println!("Writing {tailsize} remaining elements of merge {i} to lba {lba}");
+            info!("Writing {tailsize} remaining elements of merge {i} to lba {lba}");
             read_write_elements(qpair, buffer, lba, 0, LBA_SIZE / 8, false);
             buffer[0..tailsize * 8].copy_from_slice(&u64_to_u8_slice(&mut remainders_locked[i]));
             read_write_elements(qpair, buffer, lba, 0, LBA_SIZE / 8, true);
@@ -290,18 +290,18 @@ impl PartialOrd for HeapEntry {
 
 impl IPS2RaSorter {
     pub fn thread_merge(&mut self, indices: &Vec<(usize, usize)>, start_lba: usize, output_lba: usize, output_offset: usize, total_length: usize, input_length_byte: usize) -> Vec<u64> {
-        if indices[0].0 != 0 {
-            info!("Thread {} waiting for other threads to finish", rayon::current_thread_index().unwrap());
+        /*if indices[0].0 != 0 {
+            debug!("Thread {} waiting for other threads to finish", rayon::current_thread_index().unwrap());
 
             // read line from stdin
             let mut input = String::new();
             std::io::stdin().read_line(&mut input).unwrap();
 
-            info!("Clearing first elements of output buffer");
+            debug!("Clearing first elements of output buffer");
 
             let mut output_buffer = self.sort_buffer.as_mut().unwrap();
             output_buffer[0..1024 * 8].copy_from_slice(&[0u8; 1024 * 8]);
-        }
+        }*/
 
 
         assert!(self.qpair.is_some());
@@ -318,7 +318,7 @@ impl IPS2RaSorter {
         let mut output_write_hugepages: Vec<usize> = vec![0; NUM_THREADS];
 
         let tailsize = (total_length + output_offset) % (LBA_SIZE / 8);
-        println!("Thread {} starting thread merge with indices: {:?}, start_lba: {}, output_lba: {}, output_offset: {}, total_length: {}, input_length: {}, tailsize: {}", rayon::current_thread_index().unwrap(), indices, start_lba, output_lba, output_offset, total_length, input_length_byte, tailsize);
+        info!("Thread {} starting thread merge with indices: {:?}, start_lba: {}, output_lba: {}, output_offset: {}, total_length: {}, input_length: {}, tailsize: {}", rayon::current_thread_index().unwrap(), indices, start_lba, output_lba, output_offset, total_length, input_length_byte, tailsize);
 
         // read first hugepages (2M) of each chunk
         for i in 0..NUM_THREADS {
@@ -326,12 +326,12 @@ impl IPS2RaSorter {
                 continue;
             }
             let (lba, _) = calculate_lba(indices[i].0, start_lba, i, input_length_byte);
-            println!("Thread: {}, i={}, reading hugepage at lba={}", rayon::current_thread_index().unwrap(), i, lba);
+            info!("Thread: {}, i={}, reading hugepage at lba={}", rayon::current_thread_index().unwrap(), i, lba);
             read_write_hugepage_2M(qpair, lba, &mut buffers[i], false);
-            println!("Buffer read: {:?}", u8_to_u64_slice(&mut buffers[i][0..1024 * 8]));
+            info!("Buffer read: {:?}", u8_to_u64_slice(&mut buffers[i][0..1024 * 8]));
             // push first element into minHeap
             let idx = indices[i].0 % (LBA_SIZE / 8);
-            println!("Thread: {}, Pushing first element {} (Array: {}) to minHeap", rayon::current_thread_index().unwrap(), u8_to_u64(&mut buffers[i][idx * 8..idx * 8 + 8]), i);
+            info!("Thread: {}, Pushing first element {} (Array: {}) to minHeap", rayon::current_thread_index().unwrap(), u8_to_u64(&mut buffers[i][idx * 8..idx * 8 + 8]), i);
             minHeap.push(HeapEntry { value: u8_to_u64(&mut buffers[i][idx * 8..idx * 8 + 8]), array: i });
 
             write_elements[i] = 1;
@@ -342,23 +342,23 @@ impl IPS2RaSorter {
 
         loop {
             if let Some(HeapEntry { value, array }) = minHeap.pop() {
-                //info!("Min: {}, Array: {}", value, array);
+                //debug!("Min: {}, Array: {}", value, array);
                 let mut next_min = value;
                 'inner: loop {
-                    info!("Thread: {}, Writing {} (Array: {}) to output buffer. Write index: {}", rayon::current_thread_index().unwrap(), next_min, array, write_idx);
+                    debug!("Thread: {}, Writing {} (Array: {}) to output buffer. Write index: {}", rayon::current_thread_index().unwrap(), next_min, array, write_idx);
                     output_buffer[write_idx * 8..(write_idx + 1) * 8].copy_from_slice(&next_min.to_le_bytes()[0..8]); // TODO: double check
                     write_idx += 1;
 
                     if write_idx * 8 % HUGE_PAGE_SIZE_1G == 0 {
-                        info!("Thread: {}, Output buffer is full. write_idx ({write_idx}) + written_lba ({written_lba}) * 8 / LBA_SIZE + tailsize ({tailsize}) <= total_length ({total_length})", rayon::current_thread_index().unwrap());
+                        debug!("Thread: {}, Output buffer is full. write_idx ({write_idx}) + written_lba ({written_lba}) * 8 / LBA_SIZE + tailsize ({tailsize}) <= total_length ({total_length})", rayon::current_thread_index().unwrap());
                         if write_idx + (written_lba * 8 / LBA_SIZE) + tailsize <= total_length {
-                            println!("Thread: {}, Output buffer is full, writing whole hugepage to lba {}", rayon::current_thread_index().unwrap(), output_lba+written_lba);
+                            info!("Thread: {}, Output buffer is full, writing whole hugepage to lba {}", rayon::current_thread_index().unwrap(), output_lba+written_lba);
                             read_write_hugepage_1G(qpair, output_lba + written_lba, &mut output_buffer, true);
                             written_lba += LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G;
                         } else {
                             // write all but tailsize elements to ssd
                             let elements_to_write = total_length - tailsize;
-                            println!("Thread: {}, Output buffer is full, writing {elements_to_write} elements to ssd", rayon::current_thread_index().unwrap());
+                            info!("Thread: {}, Output buffer is full, writing {elements_to_write} elements to ssd", rayon::current_thread_index().unwrap());
                             read_write_elements(qpair, &mut output_buffer, output_lba + written_lba, output_offset, elements_to_write, true);
                             written_lba += elements_to_write / LBA_SIZE;
                             //assert_eq!((tailsize + output_offset) % (LBA_SIZE / 8), 0);
@@ -370,11 +370,11 @@ impl IPS2RaSorter {
                     if global_idx < indices[array].1 {
                         // check if we need to load new hugepage
                         let local_idx = (write_elements[array] + indices[array].0 % (LBA_SIZE / 8)) % (HUGE_PAGE_SIZE_2M/8);
-                        info!("Thread: {}, local_idx: {} (write_elements[{}]: {}))", rayon::current_thread_index().unwrap(), local_idx, array, write_elements[array]);
+                        debug!("Thread: {}, local_idx: {} (write_elements[{}]: {}))", rayon::current_thread_index().unwrap(), local_idx, array, write_elements[array]);
 
                         if local_idx == 0 {
                             let (lba, _) = calculate_lba(global_idx, start_lba, array, input_length_byte);
-                            info!("Thread: {}, Reading new hugepage for array {} starting at lba {}", rayon::current_thread_index().unwrap(), array, lba);
+                            debug!("Thread: {}, Reading new hugepage for array {} starting at lba {}", rayon::current_thread_index().unwrap(), array, lba);
                             read_write_hugepage_2M(qpair, lba, &mut buffers[array], false);
                         }
                         let next_element = u8_to_u64(&mut buffers[array][(local_idx % (HUGE_PAGE_SIZE_2M / 8)) * 8..(local_idx % (HUGE_PAGE_SIZE_2M / 8)) * 8 + 8]);
@@ -384,11 +384,11 @@ impl IPS2RaSorter {
 
                         if let Some(min) = minHeap.peek() { // check if new element is smaller than current min
                             if next_element <= min.value {
-                                info!("Thread: {}, Next element {} <= current min {}", rayon::current_thread_index().unwrap(), next_element, min.value);
+                                debug!("Thread: {}, Next element {} <= current min {}", rayon::current_thread_index().unwrap(), next_element, min.value);
                                 next_min = next_element;
                                 continue 'inner;
                             } else {
-                                info!("Thread: {}, Next element {} > current min {} => Pushing to minheap", rayon::current_thread_index().unwrap(), next_element, min.value);
+                                debug!("Thread: {}, Next element {} > current min {} => Pushing to minheap", rayon::current_thread_index().unwrap(), next_element, min.value);
                                 minHeap.push(HeapEntry { value: next_element, array });
                                 break 'inner;
                             }
@@ -397,21 +397,21 @@ impl IPS2RaSorter {
                             continue 'inner;
                         }
                     } else {
-                        println!("Thread: {}, global index: {} >= indices[{}].1: {}", rayon::current_thread_index().unwrap(), global_idx, array, indices[array].1);
+                        info!("Thread: {}, global index: {} >= indices[{}].1: {}", rayon::current_thread_index().unwrap(), global_idx, array, indices[array].1);
                         break 'inner;
                     }
                 }
             } else {
-                println!("Thread: {}, minHeap is empty", rayon::current_thread_index().unwrap());
+                info!("Thread: {}, minHeap is empty", rayon::current_thread_index().unwrap());
                 break;
             }
         }
         let mut elements_to_write = write_idx - tailsize;
         if elements_to_write > 0 {
-            println!("Thread {}: final writing {elements_to_write} elements from output to lba {} (write_idx: {}, tailsize: {})", rayon::current_thread_index().unwrap(), output_lba + written_lba, write_idx, tailsize);
+            info!("Thread {}: final writing {elements_to_write} elements from output to lba {} (write_idx: {}, tailsize: {})", rayon::current_thread_index().unwrap(), output_lba + written_lba, write_idx, tailsize);
             read_write_elements(qpair, &mut output_buffer, output_lba + written_lba, 0, elements_to_write, true);
         }
-        println!("Thread {}: remaining elements: {:?}", rayon::current_thread_index().unwrap(), u8_to_u64_slice(&mut output_buffer[elements_to_write * 8..write_idx * 8]));
+        info!("Thread {}: remaining elements: {:?}", rayon::current_thread_index().unwrap(), u8_to_u64_slice(&mut output_buffer[elements_to_write * 8..write_idx * 8]));
         u8_to_u64_slice(&mut output_buffer[elements_to_write * 8..write_idx * 8]).to_vec()
     }
 }
@@ -419,12 +419,12 @@ impl IPS2RaSorter {
 impl IPS2RaSorter {
     // Careful: returns #smaller elements, not index!
     pub fn binary_search_indices(&mut self, separators: &[u64], start_lba: usize, length: usize) -> Vec<usize> {
-        info!("Starting binary searching for {:?} from lba {} with length {}", separators, start_lba, length);
+        debug!("Starting binary searching for {:?} from lba {} with length {}", separators, start_lba, length);
         separators.iter().map(|&sep| {
             match self.binary_search_ext(&sep, start_lba, length) {
                 Ok(idx) => idx + 1,
                 Err(idx) => {
-                    info!("Element {} not found directly. Using next smaller element at idx {}", sep, idx);
+                    debug!("Element {} not found directly. Using next smaller element at idx {}", sep, idx);
                     idx
                 }
             }
@@ -432,7 +432,7 @@ impl IPS2RaSorter {
     }
 
     fn binary_search_ext(&mut self, element: &u64, start_lba: usize, length: usize) -> Result<usize, usize> {
-        info!("Thread {} binary searching for element {}. Start_lba: {}, length: {}", rayon::current_thread_index().unwrap(), element, start_lba, length);
+        debug!("Thread {} binary searching for element {}. Start_lba: {}, length: {}", rayon::current_thread_index().unwrap(), element, start_lba, length);
         let mut size = length;
         let mut left = 0;
         let mut right = length;
@@ -440,10 +440,10 @@ impl IPS2RaSorter {
         while left < right {
             let half = left + size / 2;
             let loaded_element = self.load_element(start_lba, half);
-            //info!("Element: {}, Half: {}, Left: {}, Right: {}, Loaded Element: {} (lba: {})", element, half, left, right, loaded_element, start_lba);
+            //debug!("Element: {}, Half: {}, Left: {}, Right: {}, Loaded Element: {} (lba: {})", element, half, left, right, loaded_element, start_lba);
             match loaded_element.cmp(element) {
                 Equal => {
-                    info!("Thread {} found element {} at index {}", rayon::current_thread_index().unwrap() , element, half);
+                    debug!("Thread {} found element {} at index {}", rayon::current_thread_index().unwrap() , element, half);
                     return Ok(half);
                 }
                 Less => {
@@ -464,7 +464,7 @@ impl IPS2RaSorter {
         let lba = idx * 8 / LBA_SIZE + start_lba;
         let offset = idx % (LBA_SIZE / 8);
         read_write_elements(self.qpair.as_mut().unwrap(), self.sort_buffer.as_mut().unwrap(), lba, offset, 1, false);
-        //info!("start_lba: {}, offset: {}, read: {:?}", lba, offset, u8_to_u64(&mut self.sort_buffer.as_mut().unwrap()[offset*8..offset*8 + 8]));
+        //debug!("start_lba: {}, offset: {}, read: {:?}", lba, offset, u8_to_u64(&mut self.sort_buffer.as_mut().unwrap()[offset*8..offset*8 + 8]));
         u8_to_u64(&mut self.sort_buffer.as_mut().unwrap()[offset * 8..offset * 8 + 8])
     }
 }
@@ -511,7 +511,7 @@ pub fn transform_indices_to_ranges(local_indices: &Vec<Vec<usize>>, array_len: u
 
 fn calculate_lba(idx: usize, start_lba: usize, i: usize, input_length: usize) -> (usize, usize) {
     assert_eq!(input_length % LBA_SIZE, 0, "Input length must be a multiple of LBA_SIZE");
-    //info!("Calculating lba: i={}, input_length={}, start_lba={}, idx={} => i*input_length/LBA_SIZE + start_lba + idx*8/LBA_SIZE = {}", i, input_length, start_lba, idx, i * input_length / LBA_SIZE + start_lba + idx * 8 / LBA_SIZE);
+    //debug!("Calculating lba: i={}, input_length={}, start_lba={}, idx={} => i*input_length/LBA_SIZE + start_lba + idx*8/LBA_SIZE = {}", i, input_length, start_lba, idx, i * input_length / LBA_SIZE + start_lba + idx * 8 / LBA_SIZE);
     (i * input_length / LBA_SIZE + start_lba + idx * 8 / LBA_SIZE, 0)
 }
 
