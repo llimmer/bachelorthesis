@@ -219,10 +219,6 @@ fn prepare_thread_merge(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, global_
     }
     info!("Total ranges: {:?}", total_ranges);
 
-    // read line from stdin
-    //let mut input = String::new();
-    //std::io::stdin().read_line(&mut input).unwrap();
-
     (0..NUM_THREADS).into_par_iter().for_each(|thread_id| {
         let merge_result = SORTER.with(|sorter| {
             let mut sorter = sorter.borrow_mut();
@@ -318,7 +314,7 @@ impl IPS2RaSorter {
         assert!(buffers.len() >= NUM_THREADS, "At least NUM_THREADS 2MiB buffers required for each parallel merge thread");
 
         let mut minHeap = BinaryHeap::new();
-        let mut write_elements_offset: Vec<(usize, usize)> = vec![(0, 0); NUM_THREADS];
+        let mut write_elements: Vec<usize> = vec![0; NUM_THREADS];
         let mut output_write_hugepages: Vec<usize> = vec![0; NUM_THREADS];
 
         let tailsize = (total_length + output_offset) % (LBA_SIZE / 8);
@@ -338,8 +334,7 @@ impl IPS2RaSorter {
             println!("Thread: {}, Pushing first element {} (Array: {}) to minHeap", rayon::current_thread_index().unwrap(), u8_to_u64(&mut buffers[i][idx * 8..idx * 8 + 8]), i);
             minHeap.push(HeapEntry { value: u8_to_u64(&mut buffers[i][idx * 8..idx * 8 + 8]), array: i });
 
-            write_elements_offset[i].0 = 1;
-            write_elements_offset[i].1 = idx;
+            write_elements[i] = 1;
         }
 
         let mut write_idx = output_offset;
@@ -371,20 +366,19 @@ impl IPS2RaSorter {
                         write_idx = 0;
                     }
 
-                    let global_idx = write_elements_offset[array].0 + indices[array].0;
+                    let global_idx = write_elements[array] + indices[array].0;
                     if global_idx < indices[array].1 {
                         // check if we need to load new hugepage
-                        let local_idx = write_elements_offset[array].0 + write_elements_offset[array].1 % (HUGE_PAGE_SIZE_2M/8);
-                        info!("Thread: {}, local_idx: {} (write_elements[{}].0: {} + write_elements_offset[{}].1: {})", rayon::current_thread_index().unwrap(), local_idx, array, write_elements_offset[array].0, array, write_elements_offset[array].1);
+                        let local_idx = (write_elements[array] + indices[array].0 % (LBA_SIZE / 8)) % (HUGE_PAGE_SIZE_2M/8);
+                        info!("Thread: {}, local_idx: {} (write_elements[{}]: {}))", rayon::current_thread_index().unwrap(), local_idx, array, write_elements[array]);
 
                         if local_idx == 0 {
                             let (lba, _) = calculate_lba(global_idx, start_lba, array, input_length_byte);
                             info!("Thread: {}, Reading new hugepage for array {} starting at lba {}", rayon::current_thread_index().unwrap(), array, lba);
                             read_write_hugepage_2M(qpair, lba, &mut buffers[array], false);
-                            write_elements_offset[array].1 = HUGE_PAGE_SIZE_2M/8 - write_elements_offset[array].0 % (HUGE_PAGE_SIZE_2M / 8);
                         }
                         let next_element = u8_to_u64(&mut buffers[array][(local_idx % (HUGE_PAGE_SIZE_2M / 8)) * 8..(local_idx % (HUGE_PAGE_SIZE_2M / 8)) * 8 + 8]);
-                        write_elements_offset[array].0 += 1;
+                        write_elements[array] += 1;
 
                         // TODO: check if only elements of one array remaining.
 
@@ -403,10 +397,12 @@ impl IPS2RaSorter {
                             continue 'inner;
                         }
                     } else {
+                        println!("Thread: {}, global index: {} >= indices[{}].1: {}", rayon::current_thread_index().unwrap(), global_idx, array, indices[array].1);
                         break 'inner;
                     }
                 }
             } else {
+                println!("Thread: {}, minHeap is empty", rayon::current_thread_index().unwrap());
                 break;
             }
         }
