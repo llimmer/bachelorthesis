@@ -78,7 +78,7 @@ pub fn read_write_elements(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, targ
     //println!("starting read_write_elements");
     let num_lba = (target_offset*8 + num_elements*8 + LBA_SIZE - 1) / LBA_SIZE;
     if num_lba > 4096 {
-        println!("Thread {}: {} {} lba blocks ({} elements) {} lba {}", if rayon::current_thread_index().is_some(){rayon::current_thread_index().unwrap().to_string()} else {"main".to_string()}, if write {"Writing"} else {"Reading"}, num_lba, num_elements, if write {"to"} else {"from"}, target_lba);
+        //println!("Thread {}: {} {} lba blocks ({} elements) {} lba {}", if rayon::current_thread_index().is_some(){rayon::current_thread_index().unwrap().to_string()} else {"main".to_string()}, if write {"Writing"} else {"Reading"}, num_lba, num_elements, if write {"to"} else {"from"}, target_lba);
     }
     let mut remaining_chunks = num_lba / LBA_PER_CHUNK;
     let remaining_lba = num_lba % LBA_PER_CHUNK;
@@ -125,7 +125,7 @@ pub fn read_write_elements(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, targ
 
         qpair.complete_io(sum);
         if num_lba > 4096 {
-            println!("Thread {}: Done", if rayon::current_thread_index().is_some() { rayon::current_thread_index().unwrap().to_string() } else { "main".to_string() });
+            //println!("Thread {}: Done", if rayon::current_thread_index().is_some() { rayon::current_thread_index().unwrap().to_string() } else { "main".to_string() });
         }
     }
 

@@ -22,7 +22,7 @@ thread_local! {
 
 pub fn parallel_sort_merge(mut nvme: NvmeDevice, len: usize) -> Result<NvmeDevice, Box<dyn Error>> {
     let num_hugepages = (len + HUGE_PAGE_SIZE_1G / 8 - 1) / (HUGE_PAGE_SIZE_1G / 8);
-    info!("Sorting and merging {} hugepages", num_hugepages);
+    //info!("Sorting and merging {} hugepages (len: {len})", num_hugepages);
 
     let max = (num_hugepages as f64).log((NUM_THREADS) as f64).ceil() as usize;
     let sort_offset =
@@ -42,7 +42,7 @@ pub fn parallel_sort_merge(mut nvme: NvmeDevice, len: usize) -> Result<NvmeDevic
     let mut cleanup_buffer = Dma::allocate(HUGE_PAGE_SIZE_2M)?;
     let nvme = initialize_thread_pool(nvme, NUM_THREADS);
 
-    info!("Starting parallel sorting. Len: {}, Max: {}, output_offset: {}", len, max, sort_offset);
+    println!("Starting parallel sorting. Len: {}, Max: {}, output_offset: {}", len, max, sort_offset);
     let initial_separators = sort_parallel_threadlocal(len, num_hugepages, sort_offset);
     info!("Done");
 
@@ -50,7 +50,7 @@ pub fn parallel_sort_merge(mut nvme: NvmeDevice, len: usize) -> Result<NvmeDevic
     //let mut input = String::new();
     // std::io::stdin().read_line(&mut input).unwrap();
 
-    info!("Starting parallel merging");
+    println!("Starting parallel merging");
     merge_parallel(&mut cleanup_qpair, &mut cleanup_buffer, initial_separators, len, num_hugepages, max, sort_offset, merge_offset);
     info!("Done");
 
@@ -110,7 +110,8 @@ fn sort_parallel_threadlocal(len: usize, num_hugepages: usize, write_offset: usi
                 if (i + 1) * HUGE_PAGE_SIZE_1G / 8 <= len {
                     HUGE_PAGE_SIZE_1G
                 } else {
-                    len - i * HUGE_PAGE_SIZE_1G / 8
+                    //info!("Thread {} last hugepage. Remaining elements: {}", rayon::current_thread_index().unwrap(), len - i * HUGE_PAGE_SIZE_1G / 8);
+                    (len - i * HUGE_PAGE_SIZE_1G / 8)*8
                 }
             }]);
 
@@ -123,7 +124,7 @@ fn sort_parallel_threadlocal(len: usize, num_hugepages: usize, write_offset: usi
             let local_separator = compute_local_separators(u64slice, NUM_THREADS - 1);
             sorter.sort_buffer = Some(buffer);
             sorter.read_write_sort_buffer_1G(i * LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G + write_offset, true);
-            info!("Thread {} finished sorting hugepage {}. Writing to lba {}. Local separators: {:?}. First elements: {:?}", rayon::current_thread_index().unwrap(), i, i * LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G + write_offset, local_separator, u8_to_u64_slice(&mut sorter.sort_buffer.as_mut().unwrap()[0..128]));
+            println!("Thread {} finished sorting hugepage {}. Writing to lba {}. Local separators: {:?}. First elements: {:?}", rayon::current_thread_index().unwrap(), i, i * LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G + write_offset, local_separator, u8_to_u64_slice(&mut sorter.sort_buffer.as_mut().unwrap()[0..128]));
 
             // push to local separators at idx i.
             let mut local_separators_locked = local_separators.lock().unwrap();
@@ -142,10 +143,10 @@ pub fn merge_parallel(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, initial_s
     assert_eq!(initial_separators.len(), num_hugepages);
 
     let mut separators = initial_separators;
-    println!("Initial separators: {:?}", separators);
+    info!("Initial separators: {:?}", separators);
 
     for i in 0..max {
-        println!("\n\ni: {i}, start_lba: {start_lba}, output_lba: {output_lba}, separators: {:?}", separators);
+        info!("\n\ni: {i}, start_lba: {start_lba}, output_lba: {output_lba}, separators: {:?}", separators);
 
         let input_length = NUM_THREADS.pow(i as u32);
         let result_length = input_length * NUM_THREADS;
@@ -155,7 +156,7 @@ pub fn merge_parallel(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, initial_s
         let mut flattened_separators: Vec<u64> = Vec::with_capacity((NUM_THREADS - 1) * min(NUM_THREADS, remaining_hugepages)); // TODO: double check
 
         for j in 0..(num_hugepages + result_length - 1) / result_length {
-            println!("\nj: {j}, input_length: {input_length}, result_length: {result_length}, remaining_hugepages: {remaining_hugepages}");
+            info!("\nj: {j}, input_length: {input_length}, result_length: {result_length}, remaining_hugepages: {remaining_hugepages}");
             // read line from stdin
             //let mut input = String::new();
             //io::stdin().read_line(&mut input).unwrap();
@@ -169,10 +170,10 @@ pub fn merge_parallel(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, initial_s
                     remaining_hugepages
                 };
 
-            println!("Cur num hugepages: {cur_num_hugepages}, last length: {last_length}");
+            info!("Cur num hugepages: {cur_num_hugepages}, last length: {last_length}");
 
             if cur_num_hugepages <= 1 {
-                println!("Only one hugepage remaining. Copying {last_length} elements from lba {} to output lba {}", start_lba + j * result_length * CHUNKS_PER_HUGE_PAGE_1G * LBA_PER_CHUNK, output_lba + j * result_length * CHUNKS_PER_HUGE_PAGE_1G * LBA_PER_CHUNK);
+                info!("Only one hugepage remaining. Copying {last_length} elements from lba {} to output lba {}", start_lba + j * result_length * CHUNKS_PER_HUGE_PAGE_1G * LBA_PER_CHUNK, output_lba + j * result_length * CHUNKS_PER_HUGE_PAGE_1G * LBA_PER_CHUNK);
                 copy_elements_ext(qpair, buffer, start_lba + j * result_length * CHUNKS_PER_HUGE_PAGE_1G * LBA_PER_CHUNK, output_lba + j * result_length * CHUNKS_PER_HUGE_PAGE_1G * LBA_PER_CHUNK, last_length);
                 next_separators.push(separators[j * NUM_THREADS].clone());
                 break;
@@ -183,14 +184,14 @@ pub fn merge_parallel(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, initial_s
                 flattened_separators.extend(vec);
             }
             flattened_separators.sort_unstable();
-            println!("Flattened separators: {:?}", flattened_separators);
+            info!("Flattened separators: {:?}", flattened_separators);
 
             let global_separators = compute_local_separators(&flattened_separators, NUM_THREADS - 1);
-            println!("Global separators: {:?}", global_separators);
+            info!("Global separators: {:?}", global_separators);
             // TODO: double check start_lba and output_lba
             prepare_thread_merge(qpair, buffer, &global_separators, start_lba + j * result_length * CHUNKS_PER_HUGE_PAGE_1G * LBA_PER_CHUNK, output_lba + j * result_length * CHUNKS_PER_HUGE_PAGE_1G * LBA_PER_CHUNK, input_length, cur_num_hugepages, last_length);
             next_separators.push(global_separators);
-            println!("Next separators: {:?}", next_separators);
+            info!("Next separators: {:?}", next_separators);
             remaining_hugepages -= cur_num_hugepages;
         }
         separators = next_separators;
@@ -219,10 +220,10 @@ fn prepare_thread_merge(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, global_
             }
         )
     }).collect();
-    println!("Local indices: {:?}", local_indices);
+    info!("Local indices: {:?}", local_indices);
 
     let ranges = transform_indices_to_ranges(&local_indices, input_length * HUGE_PAGE_SIZE_1G / 8, NUM_THREADS, last_length);
-    println!("Ranges: {:?}", ranges);
+    info!("Ranges: {:?}", ranges);
 
     //pre-compute total ranges
     let mut total_ranges: Vec<(usize, usize)> = Vec::with_capacity(NUM_THREADS);
@@ -232,7 +233,7 @@ fn prepare_thread_merge(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, global_
         sum += ranges[i].iter().map(|(start, end)| end - start).sum::<usize>();
         total_ranges.push((start, sum));
     }
-    println!("Total ranges: {:?}", total_ranges);
+    info!("Total ranges: {:?}", total_ranges);
 
     (0..NUM_THREADS).into_par_iter().for_each(|thread_id| {
         let merge_result = SORTER.with(|sorter| {
@@ -259,7 +260,7 @@ fn prepare_thread_merge(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, global_
     });
 
     // Cleanup:
-    println!("Starting cleanup");
+    info!("Starting cleanup");
     let mut remainders_locked = remainders.lock().unwrap();
     let mut sum = 0;
     // read line from stdin
@@ -534,11 +535,11 @@ fn copy_elements_ext(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, src_lba: u
         read_write_elements(qpair, buffer, src_lba, 0, len, false);
         read_write_elements(qpair, buffer, dst_lba, 0, len, true);
     } else {
-        println!("Copying elements from lba {} to lba {} with length {}", src_lba, dst_lba, len);
+        info!("Copying elements from lba {} to lba {} with length {}", src_lba, dst_lba, len);
         let mut written = 0;
         while written < len {
             let to_write = min(len - written, buffer.size / 8);
-            println!("To write: {}, src_lba: {}, dst_lba: {}", to_write, src_lba + written/64, dst_lba + written/64);
+            info!("To write: {}, src_lba: {}, dst_lba: {}", to_write, src_lba + written/64, dst_lba + written/64);
             read_write_elements(qpair, buffer, src_lba + written/64, 0, to_write, false);
             read_write_elements(qpair, buffer, dst_lba + written/64, 0, to_write, true);
             written += to_write;
