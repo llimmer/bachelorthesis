@@ -22,6 +22,10 @@ pub fn process_task(task: &mut Task) {
             }
         );
 
+        if task.level + 1 == task.level_end {
+            return;
+        }
+
         scope(|s| {
             for mut task in task.generate_subtasks(&element_counts){
                 //println!("Thread {} spawning subtasks", rayon::current_thread_index().unwrap());

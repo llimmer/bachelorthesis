@@ -32,7 +32,7 @@ impl IPS2RaSorter{
             let mut new_task = Task::new(u64slice, task.level, task.level_start,task.level_end);
 
             let mut sorter = IPS2RaSorter::new_sequential(); // TODO: dont allocate new sorter, use self
-            sorter.sequential_rec(&mut new_task);
+            sorter.sort_sequential(&mut new_task);
 
             println!("After sort: {:?}", new_task.arr);
             // write back to ssd

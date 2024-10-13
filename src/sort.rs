@@ -25,7 +25,7 @@ pub fn sort(arr: &mut [u64]) {
     let mut s = IPS2RaSorter::new_sequential();
     debug!("Task after sampling: {:?}", task.arr);
     info!("Level: {:?}", task.level);
-    s.sequential_rec(&mut task);
+    s.sort_sequential(&mut task);
 }
 
 pub fn sort_parallel(arr: &mut [u64]) {

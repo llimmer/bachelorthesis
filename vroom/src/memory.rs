@@ -188,7 +188,7 @@ impl<T> Dma<T> {
             size
         };
 
-        println!("Allocating DMA memory of size: {} (input: {}) with page size: {}", size, size, page_size_str);
+        //println!("Allocating DMA memory of size: {} (input: {}) with page size: {}", size, size, page_size_str);
 
         let id = HUGEPAGE_ID.fetch_add(1, Ordering::SeqCst);
         // Path for 1 GiB huge pages
