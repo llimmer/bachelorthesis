@@ -16,13 +16,14 @@ mod sequential_sort_merge;
 
 use crate::config::*;
 use crate::conversion::*;
-use crate::sort::read_write_hugepage_1G;
-use crate::parallel_sort_merge::parallel_sort_merge;
+use crate::sort::{read_write_hugepage_1G, sort, sort_parallel};
+use crate::parallel_sort_merge::{parallel_sort_merge};
 use crate::setup::{clear_chunks};
 use vroom::memory::{Dma, DmaSlice};
 use vroom::QUEUE_LENGTH;
 use std::error::Error;
 use std::io;
+use std::time::Instant;
 use rand::prelude::SliceRandom;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -31,7 +32,31 @@ use log::LevelFilter;
 
 fn verify_sorted(arr: &[u64]) {
     for i in 1..arr.len() {
-        assert!(arr[i - 1] <= arr[i], "Difference at i={i}. {} > {}", arr[i-1], arr[i]);
+        assert!(arr[i - 1] <= arr[i], "Difference at i={i}. {} > {}", arr[i - 1], arr[i]);
+    }
+}
+
+#[derive(Debug)]
+pub struct testEntry {
+    pub value: u64,
+}
+impl Eq for testEntry {}
+
+impl PartialEq for testEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+impl Ord for testEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        other.value.cmp(&self.value) // -> Min-Heap
+    }
+}
+
+impl PartialOrd for testEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -40,47 +65,106 @@ fn main() -> Result<(), Box<dyn Error>> {
         .filter_level(LevelFilter::Error)
         .init();
 
-    let mut nvme = vroom::init("0000:00:04.0")?;
+
+    let mut data: Vec<u64> = (1..=500_000_000u64).collect();
+    let mut rng = StdRng::seed_from_u64(12345);
+    data.shuffle(&mut rng);
+    let mut data2 = data.clone();
+    let mut data3 = data.clone();
+
+    // Sequential
+    let start = Instant::now();
+    sort(&mut data);
+    let duration = start.elapsed();
+    println!("Sequential: {:?}", duration);
+
+    // Parallel
+    let start = Instant::now();
+    sort_parallel(&mut data2);
+    let duration = start.elapsed();
+    println!("Parallel: {:?}", duration);
+
+    // Quicksort
+    let start = Instant::now();
+    data3.sort_unstable();
+    let duration = start.elapsed();
+    println!("Quicksort: {:?}", duration);
+
+
+
+
+
+
+    /*let mut nvme = vroom::init("0000:00:04.0")?;
     let mut qpair = nvme.create_io_queue_pair(QUEUE_LENGTH)?;
 
     let mut buffer_big = Dma::allocate(HUGE_PAGE_SIZE_1G)?;
 
-    clear_chunks(CHUNKS_PER_HUGE_PAGE_1G*5, &mut qpair);
+    clear_chunks(262144, &mut qpair);
 
-    let mut data: Vec<u64> = (0..HUGE_PAGE_SIZE_1G as u64/8).map(|x| 1*x).collect();
-    buffer_big[0..data.len()*8].copy_from_slice(u64_to_u8_slice(&mut data));
+    let mut data: Vec<u64> = (0..HUGE_PAGE_SIZE_1G as u64 / 8).map(|x| 1 * x).collect();
+    let mut data2: Vec<u64> = (0..HUGE_PAGE_SIZE_1G as u64 / 8).map(|x| 1 * x).collect();
+    let mut data3: Vec<u64> = (0..HUGE_PAGE_SIZE_1G as u64 / 8).map(|x| 1 * x).collect();
+    let mut data4: Vec<u64> = (0..HUGE_PAGE_SIZE_1G as u64 / 8).map(|x| 1 * x).collect();
+    let mut data5: Vec<u64> = (0..HUGE_PAGE_SIZE_1G as u64 / 8).map(|x| 1 * x).collect();
+    let mut data6: Vec<u64> = (0..HUGE_PAGE_SIZE_1G as u64 / 8).map(|x| 1 * x).collect();
+    let mut data7: Vec<u64> = (0..HUGE_PAGE_SIZE_1G as u64 / 8).map(|x| 1 * x).collect();
+    let mut data8: Vec<u64> = (0..HUGE_PAGE_SIZE_1G as u64 / 8).map(|x| 1 * x).collect();
+    let mut data9: Vec<u64> = (0..HUGE_PAGE_SIZE_1G as u64 / 16).map(|x| 1 * x).collect();
 
-    println!("Preparation done");
-    // read line from stdin
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
-
-    read_write_hugepage_1G(&mut qpair, 2*CHUNKS_PER_HUGE_PAGE_1G*LBA_PER_CHUNK, &mut buffer_big, true);
-
-    /* let mut data: Vec<u64> = (0..8192 as u64).map(|x| 1*x).collect();
-    let mut data2: Vec<u64> = (0..8192 as u64).map(|x| 1*x).collect();
-    //let mut data3: Vec<u64> = (0..8192 as u64).map(|x| 3*x).collect();
 
     let mut rng = StdRng::seed_from_u64(12345);
     data.shuffle(&mut rng);
     data2.shuffle(&mut rng);
+    data3.shuffle(&mut rng);
+    data4.shuffle(&mut rng);
+    data5.shuffle(&mut rng);
+    data6.shuffle(&mut rng);
+    data7.shuffle(&mut rng);
+    data8.shuffle(&mut rng);
+    data9.shuffle(&mut rng);
+    println!("Data 9: {:?}", data9);
 
-    buffer_big[0..data.len()*8].copy_from_slice(u64_to_u8_slice(&mut data));
+
+    buffer_big[0..data.len() * 8].copy_from_slice(u64_to_u8_slice(&mut data));
     read_write_hugepage_1G(&mut qpair, 0, &mut buffer_big, true);
 
-    buffer_big[0..data2.len()*8].copy_from_slice(u64_to_u8_slice(&mut data2));
-    read_write_hugepage_1G(&mut qpair, LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE_1G, &mut buffer_big, true);
+    buffer_big[0..data2.len() * 8].copy_from_slice(u64_to_u8_slice(&mut data2));
+    read_write_hugepage_1G(&mut qpair, LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G, &mut buffer_big, true);
 
-    //buffer_small[0..data3.len()*8].copy_from_slice(u64_to_u8_slice(&mut data3));
-    //read_write_hugepage_2M(&mut qpair, 2*LBA_PER_CHUNK*CHUNKS_PER_HUGE_PAGE_1G, &mut buffer_small, true);
+    buffer_big[0..data3.len() * 8].copy_from_slice(u64_to_u8_slice(&mut data3));
+    read_write_hugepage_1G(&mut qpair, 2 * LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G, &mut buffer_big, true);
+
+    buffer_big[0..data4.len() * 8].copy_from_slice(u64_to_u8_slice(&mut data4));
+    read_write_hugepage_1G(&mut qpair, 3 * LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G, &mut buffer_big, true);
+
+    buffer_big[0..data5.len() * 8].copy_from_slice(u64_to_u8_slice(&mut data5));
+    read_write_hugepage_1G(&mut qpair, 4 * LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G, &mut buffer_big, true);
+
+    buffer_big[0..data6.len() * 8].copy_from_slice(u64_to_u8_slice(&mut data6));
+    read_write_hugepage_1G(&mut qpair, 5 * LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G, &mut buffer_big, true);
+
+    buffer_big[0..data7.len() * 8].copy_from_slice(u64_to_u8_slice(&mut data7));
+    read_write_hugepage_1G(&mut qpair, 6 * LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G, &mut buffer_big, true);
+
+    buffer_big[0..data8.len() * 8].copy_from_slice(u64_to_u8_slice(&mut data8));
+    read_write_hugepage_1G(&mut qpair, 7 * LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G, &mut buffer_big, true);
+
+    buffer_big[0..data9.len() * 8].copy_from_slice(u64_to_u8_slice(&mut data9));
+    read_write_hugepage_1G(&mut qpair, 8 * LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G, &mut buffer_big, true);
+
 
     // read line from stdin
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
+    //let mut input = String::new();
+    //io::stdin().read_line(&mut input)?;
+    println!("Starting parallel sort merge");
+    let start = Instant::now();
+    parallel_sort_merge(nvme, HUGE_PAGE_SIZE_1G / 8 * 8 + HUGE_PAGE_SIZE_1G/16)?;
+    let duration = start.elapsed();
+    println!("Parallel sort merge: {:?}", duration);
 
-    parallel_sort_merge(nvme, 8192*2)?;*/
+    return Ok(());*/
 
-    return Ok(());
 
     /*let mut nvme = vroom::init("0000:00:04.0")?;
     let mut qpair = nvme.create_io_queue_pair(QUEUE_LENGTH)?;

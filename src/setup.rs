@@ -7,7 +7,7 @@ use std::cmp::min;
 pub fn setup_array(arr: &mut [u64], qpair: &mut NvmeQueuePair) {
     let mut buffer = Dma::allocate(HUGE_PAGE_SIZE_2M).unwrap();
     let length = arr.len();
-    println!("Buffer pointer: {:?}, {:?}", buffer.virt, buffer.phys);
+    //println!("Buffer pointer: {:?}, {:?}", buffer.virt, buffer.phys);
     let u8_arr = u64_to_u8_slice(arr);
 
     let mut max = u8_arr.len() / HUGE_PAGE_SIZE_2M;

@@ -16,7 +16,7 @@ fn main() -> Result<(), Box<dyn Error>>{
     let pci_addr = match args.next() {
         Some(arg) => arg,
         None => {
-            eprintln!("Usage: cargo run --example example_sort_merge <pci bus id> <len>");
+            eprintln!("Usage: cargo run --example example_sort_merge <pci bus id> <num_hugepages?>");
             process::exit(1);
         }
     };

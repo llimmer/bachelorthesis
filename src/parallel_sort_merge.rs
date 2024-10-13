@@ -40,7 +40,7 @@ pub fn parallel_sort_merge(mut nvme: NvmeDevice, len: usize) -> Result<NvmeDevic
 
     let mut cleanup_qpair = nvme.create_io_queue_pair(QUEUE_LENGTH)?;
     let mut cleanup_buffer = Dma::allocate(HUGE_PAGE_SIZE_2M)?;
-    let nvme = initialize_thread_pool(nvme, NUM_THREADS);
+    let nvme = initialize_thread_local(nvme, NUM_THREADS);
 
     println!("Starting parallel sorting. Len: {}, Max: {}, output_offset: {}", len, max, sort_offset);
     let initial_separators = sort_parallel_threadlocal(len, num_hugepages, sort_offset);
@@ -57,16 +57,11 @@ pub fn parallel_sort_merge(mut nvme: NvmeDevice, len: usize) -> Result<NvmeDevic
     Ok(nvme)
 }
 
-fn initialize_thread_pool(nvme: NvmeDevice, num_buffer: usize) -> NvmeDevice {
+pub fn initialize_thread_local(nvme: NvmeDevice, num_buffer: usize) -> NvmeDevice {
     assert!(NUM_THREADS * min(NUM_THREADS, num_buffer) <= HUGE_PAGES_2M, "Not enough 2MiB hugepages available for buffers");
     assert!(HUGE_PAGES_1G >= NUM_THREADS, "Not enough 1GiB hugepages available for buffers");
-    ThreadPoolBuilder::new()
-        .num_threads(NUM_THREADS) // Customize the number of threads
-        .build_global() // Replaces the default global thread pool
-        .unwrap();
-
+    println!("Initializing thread local sorters");
     let nvme_arc = Arc::new(Mutex::new(nvme));
-
 
     (0..NUM_THREADS).into_par_iter().for_each(|thread_id| {
         let nvme_clone = Arc::clone(&nvme_arc);

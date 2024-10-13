@@ -3,19 +3,21 @@ use crate::conversion::*;
 use crate::sorter::{DMATask, IPS2RaSorter, Task};
 use crate::setup::{clear_chunks, setup_array};
 use crate::sequential_sort_merge::sequential_sort_merge;
-use crate::parallel_sort_merge::parallel_sort_merge;
+use crate::parallel_sort_merge::{initialize_thread_local, parallel_sort_merge};
 use crate::parallel::process_task;
 use vroom::{NvmeDevice, NvmeQueuePair, QUEUE_LENGTH};
 use vroom::memory::{Dma, DmaSlice};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicUsize};
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::{io, thread};
 use std::error::Error;
 use rand::prelude::{SliceRandom, StdRng};
 use rand::SeedableRng;
 use log::{debug, error, info};
 
+static THREAD_POOL_INITIALIZED: AtomicBool = AtomicBool::new(false);
+static EXT_MERGE_SORTERS_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 pub fn sort(arr: &mut [u64]) {
     let mut task = Task::new(arr, 0, 0, 8);
@@ -30,7 +32,12 @@ pub fn sort(arr: &mut [u64]) {
 
 pub fn sort_parallel(arr: &mut [u64]) {
     if NUM_THREADS > 0 {
-        rayon::ThreadPoolBuilder::new().num_threads(NUM_THREADS).build_global().unwrap();
+        if !THREAD_POOL_INITIALIZED.fetch_or(true, std::sync::atomic::Ordering::Relaxed) {
+            rayon::ThreadPoolBuilder::new().
+                num_threads(NUM_THREADS).
+                build_global().
+                unwrap();
+        }
     }
     let mut initial_task = Task::new(arr, 0, 0, 0);
     if !initial_task.sample(){
@@ -39,12 +46,29 @@ pub fn sort_parallel(arr: &mut [u64]) {
     process_task(&mut initial_task);
 }
 
-pub fn sort_merge(nvme: NvmeDevice, len: usize, parallel: bool) -> Result<NvmeDevice, Box<dyn Error>>{
+pub fn sort_merge(mut nvme: NvmeDevice, len: usize, parallel: bool) -> Result<NvmeDevice, Box<dyn Error>>{
     if !parallel {
         sequential_sort_merge(nvme, len)
     } else {
+        if !THREAD_POOL_INITIALIZED.fetch_or(true, std::sync::atomic::Ordering::Relaxed) {
+            rayon::ThreadPoolBuilder::new().
+                num_threads(NUM_THREADS).
+                build_global().
+                unwrap();
+        }
+        if !EXT_MERGE_SORTERS_INITIALIZED.fetch_or(true, std::sync::atomic::Ordering::Relaxed) {
+            nvme = initialize_thread_local(nvme, NUM_THREADS);
+        }
+
         parallel_sort_merge(nvme, len)
     }
+}
+
+pub fn sort_merge_initialize_thread_local(mut nvme: NvmeDevice) -> NvmeDevice {
+    if !EXT_MERGE_SORTERS_INITIALIZED.fetch_or(true, std::sync::atomic::Ordering::Relaxed) {
+        nvme = initialize_thread_local(nvme, NUM_THREADS);
+    }
+    nvme
 }
 
 
