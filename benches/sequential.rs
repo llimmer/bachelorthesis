@@ -14,16 +14,14 @@ pub fn main() {
     let size = match args.next() {
         Some(arg) => arg.parse::<usize>().unwrap(),
         None => {
-            eprintln!("Usage: cargo run --benches bench_sequential <size> <iterations> <seed?>");
-            process::exit(1);
+            panic!("Usage: cargo run --benches bench_sequential <size> <iterations> <seed?>");
         }
     };
 
     let iterations = match args.next() {
         Some(arg) => arg.parse::<usize>().unwrap(),
         None => {
-            eprintln!("Usage: cargo run --benches bench_sequential <size> <iterations> <seed?>");
-            process::exit(1);
+            panic!("Usage: cargo run --benches bench_sequential <size> <iterations> <seed?>");
         }
     };
 
@@ -67,8 +65,7 @@ pub fn main() {
     };
 
     if mode > 4 || distribution > 8 {
-        eprintln!("Invalid mode or distribution specified. Mode: {}, Distribution: {}. Exiting.", mode, distribution);
-        process::exit(1);
+        panic!("Invalid mode or distribution specified. Mode: {}, Distribution: {}. Exiting.", mode, distribution);
     }
 
     let mut start_algo = { if mode == 0 { 1 } else { mode } };
@@ -99,9 +96,8 @@ pub fn main() {
                 let start = std::time::Instant::now();
                 match k {
                     1 => sort(&mut data),
-                    2 => sort_parallel(&mut data),
-                    3 => data.sort(),
-                    4 => data.sort_unstable(),
+                    2 => data.sort(),
+                    3 => data.sort_unstable(),
                     _ => {}
                 }
                 measurements[j - 1][k - 1].push(start.elapsed());

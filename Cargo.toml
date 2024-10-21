@@ -29,7 +29,11 @@ name = "benchmark"
 harness = false
 
 [[bench]]
-name = "benchmark_sequential"
+name = "sequential"
+harness = false
+
+[[bench]]
+name = "parallel"
 harness = false
 
 [profile.release]
