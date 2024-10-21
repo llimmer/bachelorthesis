@@ -76,7 +76,7 @@ pub fn sequential_sort_merge(mut nvme: NvmeDevice, len: usize) -> Result<NvmeDev
         println!("Done");
 
         println!("Sorting hugepage {i}");
-        sorter.sort_sequential(&mut task);
+        sorter.sequential_rec(&mut task);
         println!("Done");
 
         println!("Writing hugepage {i}");

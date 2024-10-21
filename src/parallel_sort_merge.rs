@@ -114,7 +114,7 @@ fn sort_parallel_threadlocal(len: usize, num_hugepages: usize, write_offset: usi
             if !task.sample() {
                 return;
             }
-            sorter.sort_sequential(&mut task);
+            sorter.sequential_rec(&mut task);
 
             let local_separator = compute_local_separators(u64slice, NUM_THREADS - 1);
             sorter.sort_buffer = Some(buffer);

@@ -125,7 +125,10 @@ impl IPS2RaSorter {
     }
 
     pub fn new_parallel() -> Box<Self> {
-        //println!("Creating new parallel sorter");
+        println!("Creating new parallel sorter");
+        //read line from stdin
+        //let mut line = String::new();
+        //std::io::stdin().read_line(&mut line).unwrap();
         Box::new(Self {
             classified_elements: 0,
             pointers: [(0, 0); K],

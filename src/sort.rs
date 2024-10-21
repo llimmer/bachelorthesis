@@ -4,7 +4,7 @@ use crate::sorter::{DMATask, IPS2RaSorter, Task};
 use crate::setup::{clear_chunks, setup_array};
 use crate::sequential_sort_merge::sequential_sort_merge;
 use crate::parallel_sort_merge::{initialize_thread_local, parallel_sort_merge};
-use crate::parallel::process_task;
+use crate::parallel::parallel_rec;
 use vroom::{NvmeDevice, NvmeQueuePair, QUEUE_LENGTH};
 use vroom::memory::{Dma, DmaSlice};
 use std::collections::VecDeque;
@@ -27,40 +27,43 @@ pub fn sort(arr: &mut [u64]) {
     let mut s = IPS2RaSorter::new_sequential();
     debug!("Task after sampling: {:?}", task.arr);
     info!("Level: {:?}", task.level);
-    s.sort_sequential(&mut task);
+    s.sequential_rec(&mut task);
 }
 
 pub fn sort_parallel(arr: &mut [u64]) {
-    if NUM_THREADS > 0 {
-        if !THREAD_POOL_INITIALIZED.fetch_or(true, std::sync::atomic::Ordering::Relaxed) {
-            rayon::ThreadPoolBuilder::new().
-                num_threads(NUM_THREADS).
-                build_global().
-                unwrap();
-        }
-    }
-    let mut initial_task = Task::new(arr, 0, 0, 0);
+    //read line from stdin
+    //let mut input = String::new();
+    //io::stdin().read_line(&mut input).unwrap();
+    //println!("Thread: {} starting parallel sort", rayon::current_thread_index().unwrap());
+    initialize_thread_pool();
+    let mut initial_task = Task::new(arr, 0, 0, 8);
     if !initial_task.sample(){
         return;
     }
-    process_task(&mut initial_task);
+    //println!("Starting recursive sort");
+    parallel_rec(&mut initial_task);
 }
 
 pub fn sort_merge(mut nvme: NvmeDevice, len: usize, parallel: bool) -> Result<NvmeDevice, Box<dyn Error>>{
     if !parallel {
         sequential_sort_merge(nvme, len)
     } else {
-        if !THREAD_POOL_INITIALIZED.fetch_or(true, std::sync::atomic::Ordering::Relaxed) {
-            rayon::ThreadPoolBuilder::new().
-                num_threads(NUM_THREADS).
-                build_global().
-                unwrap();
-        }
+        initialize_thread_pool();
         if !EXT_MERGE_SORTERS_INITIALIZED.fetch_or(true, std::sync::atomic::Ordering::Relaxed) {
             nvme = initialize_thread_local(nvme, NUM_THREADS);
         }
 
         parallel_sort_merge(nvme, len)
+    }
+}
+
+pub fn initialize_thread_pool() {
+    if !THREAD_POOL_INITIALIZED.fetch_or(true, std::sync::atomic::Ordering::Relaxed) {
+        println!("Initializing thread pool with {} threads", NUM_THREADS);
+        rayon::ThreadPoolBuilder::new().
+            num_threads(NUM_THREADS).
+            build_global().
+            unwrap();
     }
 }
 
