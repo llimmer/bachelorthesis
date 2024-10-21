@@ -112,7 +112,7 @@ impl IPS2RaSorter {
         bucket
     }
 
-    pub fn cleanup_ext(&mut self, task: &mut DMATask){
+    pub fn cleanup_ext(&mut self, task: &mut ExtTask){
         assert!(self.qpair.is_some(), "Cannot classify_in_out without qpair");
         assert!(self.buffers.is_some(), "Cannot classify_in_out without buffers");
 

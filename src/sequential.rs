@@ -21,7 +21,7 @@ impl IPS2RaSorter {
             let end = bucket_start[i + 1];
             if (end - start) > THRESHOLD as u64 {
                 //println!("New task: start: {}, end: {}, level: {}", start, end, task.level + 1);
-                let mut new_task = Task::new(&mut task.arr[start as usize..end as usize], task.level + 1, task.level_start, task.level_end);
+                let mut new_task = Task::new(&mut task.arr[start as usize..end as usize], task.level + 1, task.level_end);
                 self.clear();
                 self.sequential_rec(&mut new_task);
             }

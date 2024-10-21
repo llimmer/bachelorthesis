@@ -35,14 +35,15 @@ pub fn main() {
 
     // warm up
     {
-        let mut data = generate_uniform(&mut StdRng::seed_from_u64(seed), 1_000_000);
+        let mut data = generate_uniform(&mut StdRng::seed_from_u64(seed), size);
         sort_parallel(&mut data);
     }
-
+    println!("Starting benchmark");
     let mut measurements: Vec<Duration> = Vec::new();
 
-    for _ in 0..iterations {
+    for i in 0..iterations {
         let mut data = generate_uniform(&mut StdRng::seed_from_u64(seed), size);
+        println!("Iteration {}", i);
         let mut start = std::time::Instant::now();
         sort_parallel(&mut data);
         let duration = start.elapsed();

@@ -71,7 +71,7 @@ pub fn sequential_sort_merge(mut nvme: NvmeDevice, len: usize) -> Result<NvmeDev
             }
         }]);
         println!("Creating and sampling task of length {}", u64slice.len());
-        let mut task = Task::new(u64slice, 0, 0, 0);
+        let mut task = Task::new(u64slice, 0, 0);
         task.sample();
         println!("Done");
 

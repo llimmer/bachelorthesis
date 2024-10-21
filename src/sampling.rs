@@ -1,7 +1,7 @@
 use crate::config::*;
 use crate::conversion::*;
 use crate::sort::{read_write_hugepage_1G};
-use crate::sorter::{DMATask, IPS2RaSorter, Task};
+use crate::sorter::{ExtTask, IPS2RaSorter, Task};
 use std::cmp::{max, min};
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
@@ -13,7 +13,6 @@ impl<'a> Task<'_> {
         if level_begin == 0 && level_end == 0 {
             return false;
         }
-        self.level_start = level_begin;
         self.level_end = level_end;
         self.level = level_begin;
         true
@@ -105,14 +104,13 @@ impl<'a> Task<'_> {
         let klog2 = (K as u64).ilog2();
         let zero_blocks = (lz as f64 / klog2 as f64).floor() as u32;
         self.level = zero_blocks as usize;
-        self.level_start = zero_blocks as usize;
         self.level_end = 8;
     }
 }
 
 
 impl IPS2RaSorter {
-    pub fn sample(&mut self, task: &mut DMATask) {
+    pub fn sample(&mut self, task: &mut ExtTask) {
         let mut max = u64::MAX;
         let mut remaining = task.size;
         for i in 0..task.size / (HUGE_PAGE_SIZE_1G/8) {

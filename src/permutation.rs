@@ -1,7 +1,7 @@
 use crate::config::*;
 use crate::conversion::*;
 use crate::sort::{find_bucket_ips2ra, read_write_elements, read_write_hugepage_1G};
-use crate::sorter::{DMATask, IPS2RaSorter, Task};
+use crate::sorter::{ExtTask, IPS2RaSorter, Task};
 use vroom::memory::{Dma, DmaSlice};
 use vroom::{NvmeQueuePair};
 use std::cmp::max;
@@ -121,7 +121,7 @@ impl IPS2RaSorter {
         (tmp, self.pointers[bucket].1)
     }
 
-    pub fn permutate_blocks_ext(&mut self, task: &mut DMATask){
+    pub fn permutate_blocks_ext(&mut self, task: &mut ExtTask){
         self.calculate_pointers();
 
         debug!("External Sorter before permutation: {:?}", self);
@@ -157,7 +157,7 @@ impl IPS2RaSorter {
         }
     }
 
-    fn classify_and_read_block_ext(&mut self, bucket: usize, task: &mut DMATask) -> i64 {
+    fn classify_and_read_block_ext(&mut self, bucket: usize, task: &mut ExtTask) -> i64 {
         let (write_ptr, read_ptr) = self.fetch_sub_most_significant(bucket);
         let qpair = self.qpair.as_mut().unwrap();
         let buffer = self.buffers.as_mut().unwrap();
@@ -176,7 +176,7 @@ impl IPS2RaSorter {
         find_bucket_ips2ra(self.swap_buffer[0][0], task.level) as i64
     }
 
-    fn swap_block_ext(&mut self, max_off: usize, dest_bucket: i64, current_swap: bool, task: &mut DMATask) -> i64 {
+    fn swap_block_ext(&mut self, max_off: usize, dest_bucket: i64, current_swap: bool, task: &mut ExtTask) -> i64 {
         let mut new_dest_bucket: i64;
         let mut write_ptr: i64 = -1;
         let mut read_ptr: i64 = -1;

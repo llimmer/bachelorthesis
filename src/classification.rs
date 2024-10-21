@@ -39,7 +39,7 @@ impl IPS2RaSorter {
         self.classified_elements = write_idx;
     }
 
-    pub fn classify_ext(&mut self, task: &mut DMATask) {
+    pub fn classify_ext(&mut self, task: &mut ExtTask) {
         // using 2M hugepages
         debug!("Starting DMA classification: level {}, Chunks/HP: {}, tmp: {}", task.level, CHUNKS_PER_HUGE_PAGE_2M, ELEMENTS_PER_CHUNK* CHUNKS_PER_HUGE_PAGE_2M);
         let mut write_hugepage = task.start_lba / (CHUNKS_PER_HUGE_PAGE_2M * LBA_PER_CHUNK);

@@ -6,16 +6,14 @@ use std::fmt::{Debug, Display};
 pub struct Task<'a> {
     pub arr: &'a mut [u64],
     pub level: usize,
-    pub level_start: usize,
     pub level_end: usize,
 }
 
 impl Task<'_> {
-    pub fn new(arr: &mut [u64], level: usize, level_start: usize, level_end: usize) -> Task { // TODO: check level start + end
+    pub fn new(arr: &mut [u64], level: usize, level_end: usize) -> Task { // TODO: check level start + end
         Task {
             arr,
             level,
-            level_start,
             level_end,
         }
     }
@@ -27,13 +25,13 @@ impl Task<'_> {
         let mut res = Vec::with_capacity(K);
         let (first, mut rest) = self.arr.split_at_mut(element_counts[0] as usize);
         if first.len() > 1 {
-            res.push(Task::new(first, self.level + 1, self.level_start, self.level_end));
+            res.push(Task::new(first, self.level + 1, self.level_end));
         }
         for i in 1..K {
             let (left, right) = rest.split_at_mut(element_counts[i] as usize);
             rest = right;
             if left.len() > 1 {
-                res.push(Task::new(left, self.level + 1, self.level_start, self.level_end));
+                res.push(Task::new(left, self.level + 1, self.level_end));
             }
 
         }
@@ -43,23 +41,21 @@ impl Task<'_> {
 
 
 
-pub struct DMATask<> {
+pub struct ExtTask<> {
     pub start_lba: usize,
     pub offset: usize,
     pub size:  usize,
     pub level: usize,
-    pub level_start: usize,
     pub level_end: usize,
 }
 
-impl DMATask {
-    pub fn new(start_lba: usize, offset: usize, size: usize, level: usize, level_start: usize, level_end: usize) -> DMATask {
-        DMATask {
+impl ExtTask {
+    pub fn new(start_lba: usize, offset: usize, size: usize, level: usize, level_end: usize) -> ExtTask {
+        ExtTask {
             start_lba,
             offset,
             size,
             level,
-            level_start,
             level_end,
         }
     }

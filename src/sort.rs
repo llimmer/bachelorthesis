@@ -1,6 +1,6 @@
 use crate::config::*;
 use crate::conversion::*;
-use crate::sorter::{DMATask, IPS2RaSorter, Task};
+use crate::sorter::{ExtTask, IPS2RaSorter, Task};
 use crate::setup::{clear_chunks, setup_array};
 use crate::sequential_sort_merge::sequential_sort_merge;
 use crate::parallel_sort_merge::{initialize_thread_local, parallel_sort_merge};
@@ -20,7 +20,7 @@ static THREAD_POOL_INITIALIZED: AtomicBool = AtomicBool::new(false);
 static EXT_MERGE_SORTERS_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 pub fn sort(arr: &mut [u64]) {
-    let mut task = Task::new(arr, 0, 0, 8);
+    let mut task = Task::new(arr, 0, 8);
     if !task.sample(){
         return;
     }
@@ -36,7 +36,7 @@ pub fn sort_parallel(arr: &mut [u64]) {
     //io::stdin().read_line(&mut input).unwrap();
     //println!("Thread: {} starting parallel sort", rayon::current_thread_index().unwrap());
     initialize_thread_pool();
-    let mut initial_task = Task::new(arr, 0, 0, 8);
+    let mut initial_task = Task::new(arr, 0, 8);
     if !initial_task.sample(){
         return;
     }
@@ -86,7 +86,7 @@ pub fn rolling_sort(mut nvme: NvmeDevice, len: usize, parallel: bool) -> Result<
         }
 
         let mut sorter = IPS2RaSorter::new_ext_sequential(qpair, buffers, sort_buffer);
-        let mut task = DMATask::new(0, 0, len, 6, 6, 8);
+        let mut task = ExtTask::new(0, 0, len, 6, 8);
         sorter.sequential_rolling_sort(&mut task);
     } else {
         unimplemented!();

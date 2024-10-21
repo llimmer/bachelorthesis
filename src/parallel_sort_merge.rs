@@ -110,7 +110,7 @@ fn sort_parallel_threadlocal(len: usize, num_hugepages: usize, write_offset: usi
                 }
             }]);
 
-            let mut task = Task::new(u64slice, 0, 0, 8);
+            let mut task = Task::new(u64slice, 0,  8);
             if !task.sample() {
                 return;
             }

@@ -31,12 +31,12 @@ pub fn parallel_rec(task: &mut Task) {
         //println!("Thread {}, len: {} spawning subtasks", rayon::current_thread_index().unwrap(), task.arr.len());
 
         scope(|s| {
-            for mut task in task.generate_subtasks(&element_counts){
+            for mut new_task in task.generate_subtasks(&element_counts){
                 //println!("Thread {} spawning subtasks", rayon::current_thread_index().unwrap());
                 s.spawn(move |_| {
                     //println!("Spawning subtasks of length: {}", task.arr.len());
                     //println!("Thread {} spawned", rayon::current_thread_index().unwrap());
-                    parallel_rec(&mut task);
+                    parallel_rec(&mut new_task);
                 });
             }
         });
