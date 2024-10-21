@@ -71,7 +71,7 @@ pub fn main() {
     let mut start_algo = { if mode == 0 { 1 } else { mode } };
     let mut max_algo = { if mode == 0 { 3 } else { mode } };
     let mut start_dist = { if distribution == 0 { 1 } else { distribution } };
-    let mut max_dist = { if distribution == 0 { 8 } else { 1 } };
+    let mut max_dist = { if distribution == 0 { 9 } else { 1 } };
 
     let mut measurements: Vec<Vec<Vec<Duration>>> = vec![vec![Vec::with_capacity(iterations); (max_algo - start_algo) + 1]; (max_dist - start_dist) + 1];
     let mut rng = StdRng::seed_from_u64(seed);
