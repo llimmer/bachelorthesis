@@ -1,11 +1,10 @@
 use rand::prelude::*;
-use std::{env, process};
+use std::{env};
 use std::time::Duration;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use bachelorthesis::{initialize_thread_pool, sort, sort_parallel};
-use rand_distr::{Distribution, Exp};
-use zipf::ZipfDistribution;
+use bachelorthesis::{sort};
+
 
 pub fn main() {
     let mut args = env::args();
@@ -48,14 +47,15 @@ pub fn main() {
 
     // distributions:
     // 0: all
-    // 1: uniform
-    // 2: exponential
+    // 1: sorted
+    // 2: reverse sorted
     // 3: almost sorted
-    // 4: zipf
-    // 5: root dup
-    // 6: two dup
-    // 7: eight dup
-    // 8: range
+    // 4: uniform
+    // 5: exponential
+    // 6: root dup
+    // 7: two dup
+    // 8: eight dup
+    // 9: range
     let distribution = match args.next() {
         Some(arg) => arg.parse::<usize>().unwrap(),
         None => {
@@ -82,14 +82,15 @@ pub fn main() {
             println!("Distribution {}", j);
             for k in start_algo..=max_algo {
                 let mut data: Vec<u64> = match j {
-                    1 => generate_uniform(&mut rng, size),
-                    2 => generate_exponential(&mut rng, size),
+                    1 => generate_sorted(size),
+                    2 => generate_reverse_sorted(size),
                     3 => generate_almost_sorted(&mut rng, size),
-                    4 => generate_zipf(&mut rng, size, 1.5),
-                    5 => generate_root_dup(size),
-                    6 => generate_two_dup(size),
-                    7 => generate_eight_dup(size),
-                    8 => generate_in_range(&mut rng, size, 1000),
+                    4 => generate_uniform(&mut rng, size),
+                    5 => generate_exponential(&mut rng, size),
+                    6 => generate_root_dup(size),
+                    7 => generate_two_dup(size),
+                    8 => generate_eight_dup(size),
+                    9 => generate_in_range(&mut rng, size, u32::MAX as u64),
                     _ => panic!("Invalid distribution")
                 };
                 println!("Algorithm {}", k);
@@ -121,14 +122,15 @@ pub fn main() {
             }
             let avg = sum / iterations as u32;
             println!("\t{}: {:?}", match j {
-                1 => "uniform",
-                2 => "exponential",
+                1 => "sorted",
+                2 => "reverse sorted",
                 3 => "almost sorted",
-                4 => "zipf",
-                5 => "root dup",
-                6 => "two dup",
-                7 => "eight dup",
-                8 => "range",
+                4 => "uniform",
+                5 => "exponential",
+                6 => "root dup",
+                7 => "two dup",
+                8 => "eight dup",
+                9 => "u32 range",
                 _ => panic!("Invalid distribution")
             }, avg);
         }
@@ -174,14 +176,6 @@ fn generate_eight_dup(n: usize) -> Vec<u64> {
     }).collect()
 }
 
-// zipf distribution.
-fn generate_zipf(rng: &mut StdRng, length: usize, s: f64) -> Vec<u64> {
-    let zipf_dist = ZipfDistribution::new(length, s).unwrap();
-    (0..length)
-        .map(|_| zipf_dist.sample(rng) as u64)
-        .collect()
-}
-
 // 95% sorted
 fn generate_almost_sorted(rng: &mut StdRng, length: usize) -> Vec<u64> {
     let mut data: Vec<u64> = (0..length as u64).collect();
@@ -206,5 +200,13 @@ fn generate_in_range(rng: &mut StdRng, length: usize, range: u64) -> Vec<u64> {
     (0..length)
         .map(|_| rng.gen_range(0..range))
         .collect()
+}
+
+fn generate_sorted(length: usize) -> Vec<u64> {
+    (0..length as u64).collect()
+}
+
+fn generate_reverse_sorted(length: usize) -> Vec<u64> {
+    (0..length as u64).rev().collect()
 }
 

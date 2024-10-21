@@ -24,7 +24,7 @@ use vroom::QUEUE_LENGTH;
 use std::error::Error;
 use std::io;
 use std::time::Instant;
-use rand::prelude::SliceRandom;
+use rand::prelude::*;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use log::LevelFilter;
@@ -60,39 +60,80 @@ impl PartialOrd for testEntry {
     }
 }
 
+use perf_event::events::{Hardware, Software};
+use perf_event::{Builder, Group};
+use rand_distr::Exp;
+use zipf::ZipfDistribution;
+
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::builder()
         .filter_level(LevelFilter::Error)
         .init();
+    let mut rng = StdRng::seed_from_u64(12345);
+    let mut data = generate_eight_dup(100000);
+    println!("Data: {:?}", data);
+    let mut start = Instant::now();
+    sort(&mut data);
+    println!("Sequential: {:?}", start.elapsed());
+
+    return Ok(());
 
 
-    let mut data: Vec<u64> = (1..=500_000_000u64).collect();
+    /*// A `Group` lets us enable and disable several counters atomically.
+    let mut group = Group::new()?;
+    let cycles = group.add(&Builder::new(Hardware::CPU_CYCLES))?;
+    let insns = group.add(&Builder::new(Hardware::INSTRUCTIONS))?;
+    let misses = group.add(&Builder::new(Hardware::CACHE_MISSES))?;
+    let page_faults = group.add(&Builder::new(Software::PAGE_FAULTS))?;
+    let branch_misses = group.add(&Builder::new(Hardware::BRANCH_MISSES))?;
+    //let stalled_cycles_backend = group.add(&Builder::new(Hardware::STALLED_CYCLES_BACKEND))?;
+
+
+    let mut data: Vec<u64> = (1..=100_000_000u64).collect();
     let mut rng = StdRng::seed_from_u64(12345);
     data.shuffle(&mut rng);
-    let mut data2 = data.clone();
-    let mut data3 = data.clone();
 
-    // Sequential
-    let start = Instant::now();
-    sort(&mut data);
-    let duration = start.elapsed();
-    println!("Sequential: {:?}", duration);
+    group.enable()?;
+    data.sort_unstable();
+    group.disable()?;
 
-    // Parallel
-    let start = Instant::now();
-    sort_parallel(&mut data2);
-    let duration = start.elapsed();
-    println!("Parallel: {:?}", duration);
+    let counts = group.read()?;
+    println!(
+        "cycles / instructions: {} / {} ({:.2} cpi)",
+        counts[&cycles],
+        counts[&insns],
+        (counts[&cycles] as f64 / counts[&insns] as f64)
+    );
 
-    // Quicksort
-    let start = Instant::now();
-    data3.sort_unstable();
-    let duration = start.elapsed();
-    println!("Quicksort: {:?}", duration);
+    println!("cache misses: {} ", counts[&misses]);
+    println!("branch misses: {} ", counts[&branch_misses]);
+    println!("page faults: {} ", counts[&page_faults]);*/
+    //println!("stalled cycles backend: {} ", counts[&stalled_cycles_backend]);
 
 
+    /* let mut data: Vec<u64> = (1..=500_000_000u64).collect();
+     let mut rng = StdRng::seed_from_u64(12345);
+     data.shuffle(&mut rng);
+     let mut data2 = data.clone();
+     let mut data3 = data.clone();
 
+     // Sequential
+     let start = Instant::now();
+     sort(&mut data);
+     let duration = start.elapsed();
+     println!("Sequential: {:?}", duration);
 
+     // Parallel
+     let start = Instant::now();
+     sort_parallel(&mut data2);
+     let duration = start.elapsed();
+     println!("Parallel: {:?}", duration);
+
+     // Quicksort
+     let start = Instant::now();
+     data3.sort_unstable();
+     let duration = start.elapsed();
+     println!("Quicksort: {:?}", duration);*/
 
 
     /*let mut nvme = vroom::init("0000:00:04.0")?;
@@ -350,4 +391,85 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+// exponential distribution.
+fn generate_exponential(rng: &mut StdRng, n: usize) -> Vec<u64> {
+    let log_n = (n as f64).log(2.0).ceil() as usize; // Calculate log base 2 of n
+    (0..n).map(|i| {
+        let i = (i % log_n) as f64; // i should be in [0, log_n)
+        let lower_bound = (2f64.powf(i));
+        let upper_bound = (2f64.powf(i + 1.0));
+        rng.gen_range(lower_bound..upper_bound) as u64 // Select uniformly from [2^i, 2^(i+1))
+    }).collect()
+}
+
+// rootDup distribution.
+fn generate_root_dup(n: usize) -> Vec<u64> {
+    let sqrt_n = (n as f64).sqrt() as usize; // Floor of the square root of n
+    (0..n).map(|i| {
+        let value = i % sqrt_n; // A[i] = i mod floor(sqrt(n))
+        value as u64
+    }).collect()
+}
+
+// twoDup distribution.
+fn generate_two_dup(n: usize) -> Vec<u64> {
+    (0..n).map(|i| {
+        let value = (i * i + n / 2) % n; // A[i] = i^2 + n/2 mod n
+        value as u64
+    }).collect()
+}
+
+// eightDup distribution.
+fn generate_eight_dup(n: usize) -> Vec<u64> {
+    (0..n).map(|i| {
+        let value = (i.pow(8) + n / 2) % n; // A[i] = i^8 + n/2 mod n
+        value as u64
+    }).collect()
+}
+
+// zipf distribution.
+fn generate_zipf(rng: &mut StdRng, n: usize) -> Vec<u64> {
+    let mut zipf_distribution: Vec<u64> = (1..=1000000).collect();
+    let total_weight: f64 = zipf_distribution.iter().map(|k| 1.0 / (*k as f64).powf(0.75)).sum();
+
+    (0..n).map(|_| {
+        let rand_value = rng.gen_range(0.0..total_weight);
+        let mut cumulative_weight = 0.0;
+
+        for &k in &zipf_distribution {
+            cumulative_weight += 1.0 / (k as f64).powf(0.75);
+            if cumulative_weight >= rand_value {
+                return k as u64; // Return the chosen k
+            }
+        }
+
+        zipf_distribution[0] // Fallback in case of an error
+    }).collect()
+}
+
+// 95% sorted
+fn generate_almost_sorted(rng: &mut StdRng, length: usize) -> Vec<u64> {
+    let mut data: Vec<u64> = (0..length as u64).collect();
+
+    for _ in 0..(length / 20) { // swap 5% of data
+        let i = rng.gen_range(0..length);
+        let j = rng.gen_range(0..length);
+        data.swap(i, j);
+    }
+    data
+}
+
+// uniform distribution
+fn generate_uniform(rng: &mut StdRng, length: usize) -> Vec<u64> {
+    (0..length)
+        .map(|_| rng.gen::<u64>())
+        .collect()
+}
+
+// range
+fn generate_in_range(rng: &mut StdRng, length: usize, range: u64) -> Vec<u64> {
+    (0..length)
+        .map(|_| rng.gen_range(0..range))
+        .collect()
+}
 
