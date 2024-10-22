@@ -20,6 +20,13 @@ pub fn main() {
         .map(|s| s.trim().parse::<usize>().unwrap()) // Parse each number
         .collect();
 
+    let iterations = match args.next() {
+        Some(arg) => arg.parse::<usize>().unwrap(),
+        None => {
+            panic!("Usage: cargo run --benches bench_sequential <size> <iterations> <seed?>");
+        }
+    };
+
     // 0: Ips2Ra sequential
     // 1: Rust sort_unstable()
     let mode = match args.next() {
@@ -27,13 +34,6 @@ pub fn main() {
         None => {
             eprintln!("No mode specified. Using 'ips2ra' (0)");
             0
-        }
-    };
-
-    let iterations = match args.next() {
-        Some(arg) => arg.parse::<usize>().unwrap(),
-        None => {
-            panic!("Usage: cargo run --benches bench_sequential <size> <iterations> <seed?>");
         }
     };
 
@@ -47,10 +47,10 @@ pub fn main() {
 
     let mut measurements: Vec<Duration> = Vec::with_capacity(sizes.len());
     let mut rng = StdRng::seed_from_u64(seed);
-    for size in sizes {
+    for i in 0..sizes.len() {
         let mut local_measurements: Vec<Duration> = Vec::with_capacity(iterations);
         for _ in 0..iterations {
-            let mut data = generate_uniform(&mut rng, size);
+            let mut data = generate_uniform(&mut rng, sizes[i]);
             let mut start = std::time::Instant::now();
             match mode {
                 0 => sort(&mut data),
