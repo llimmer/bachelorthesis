@@ -82,13 +82,13 @@ dependencies = [
  "lazy_static",
  "log",
  "once_cell",
+ "pdqsort",
  "perf-event2",
  "rand",
  "rand_distr",
  "rayon",
  "thread_local",
  "vroom",
- "zipf",
 ]
 
 [[package]]
@@ -433,6 +433,12 @@ name = "oorandom"
 version = "11.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b410bbe7e14ab526a0e86877eb47c6996a2bd7746f027ba551028c925390e4e9"
+
+[[package]]
+name = "pdqsort"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92d11770083078fa188bb64ff3b1b5af04c374bf429be2c77480823c1fc5c5e5"
 
 [[package]]
 name = "perf-event-data"
@@ -904,13 +910,4 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "zipf"
-version = "7.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "390e51da0ed8cc3ade001d15fa5ba6f966b99c858fb466ec6b06d1682f1f94dd"
-dependencies = [
- "rand",
 ]

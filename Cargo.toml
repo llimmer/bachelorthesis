@@ -19,7 +19,7 @@ lazy_static = "1.5.0"
 once_cell = "1.19.0"
 perf-event2 = "0.7"
 rand_distr = "0.4"
-zipf = "7.0.1"
+pdqsort = "1.0.3"
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["html_reports"] }

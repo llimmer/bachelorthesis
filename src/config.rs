@@ -1,7 +1,7 @@
 pub const K: usize = 256; // number of buckets
-pub const BLOCKSIZE: usize = 256; // number of elements that belong to same bucket
-pub const THRESHOLD: usize = 32; // Threshold from which samplesort is used
-pub const NUM_THREADS: usize = 4;
+pub const BLOCKSIZE: usize = 128; // number of elements that belong to same bucket
+pub const THRESHOLD: usize = 128; // Threshold from which samplesort is used
+pub const NUM_THREADS: usize = 16;
 
 // DMA:
 pub const LBA_SIZE: usize = 512; // Logical Block Addressing Size of SSD (usually 512)

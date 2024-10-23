@@ -1,27 +1,41 @@
 use rand::prelude::*;
-use std::{env, process};
+use std::{env};
 use std::time::Duration;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use bachelorthesis::{initialize_thread_pool, sort, sort_parallel};
-use rand_distr::{Distribution, Exp};
-use zipf::ZipfDistribution;
+use rayon::prelude::ParallelSliceMut;
+use bachelorthesis::{sort_parallel, BLOCKSIZE, THRESHOLD};
+
 
 pub fn main() {
     let mut args = env::args();
     args.next();
 
-    let size = match args.next() {
+    let sizes_input = match args.next() {
+        Some(arg) => arg,
+        None => panic!("Expected <array> argument in format [123, 234, 345, 456]"),
+    };
+    let sizes_input = sizes_input.trim_matches(|c| c == '[' || c == ']');
+    let sizes: Vec<usize> = sizes_input
+        .split(',')
+        .map(|s| s.trim().parse::<usize>().unwrap()) // Parse each number
+        .collect();
+
+    let iterations = match args.next() {
         Some(arg) => arg.parse::<usize>().unwrap(),
         None => {
             panic!("Usage: cargo run --benches bench_sequential <size> <iterations> <seed?>");
         }
     };
 
-    let iterations = match args.next() {
+    // 0: Ips2Ra parallel
+    // 1: Rayon par_sort_unstable()
+    // 2: Rayon par_sort_unstable()
+    let mode = match args.next() {
         Some(arg) => arg.parse::<usize>().unwrap(),
         None => {
-            panic!("Usage: cargo run --benches bench_sequential <size> <iterations> <seed?>");
+            eprintln!("No mode specified. Using 'ips2ra' (0)");
+            0
         }
     };
 
@@ -33,25 +47,34 @@ pub fn main() {
         }
     };
 
-    // warm up
-    {
-        let mut data = generate_uniform(&mut StdRng::seed_from_u64(seed), size);
-        sort_parallel(&mut data);
+    let mut measurements: Vec<Duration> = Vec::with_capacity(sizes.len());
+    let mut rng = StdRng::seed_from_u64(seed);
+    for i in 0..sizes.len() {
+        let mut local_measurements: Vec<Duration> = Vec::with_capacity(iterations);
+        for _ in 0..iterations {
+            let mut data = generate_uniform(&mut rng, sizes[i]);
+            let mut start = std::time::Instant::now();
+            match mode {
+                0 => sort_parallel(&mut data),
+                1 => data.par_sort(),
+                2 => data.par_sort_unstable(),
+                _ => panic!("Invalid mode"),
+            }
+            let duration = start.elapsed();
+            local_measurements.push(duration);
+        }
+        let avg = local_measurements.iter().sum::<Duration>() / iterations as u32;
+        measurements.push(avg);
     }
-    println!("Starting benchmark");
-    let mut measurements: Vec<Duration> = Vec::new();
-
-    for i in 0..iterations {
-        let mut data = generate_uniform(&mut StdRng::seed_from_u64(seed), size);
-        println!("Iteration {}", i);
-        let mut start = std::time::Instant::now();
-        sort_parallel(&mut data);
-        let duration = start.elapsed();
-        measurements.push(duration);
+    // print as table
+    match mode {
+        0 => println!("IPS2Ra: BLOCKSIZE = {}, THRESHOLD = {}", BLOCKSIZE, THRESHOLD),
+        1 => println!("Rayon par_sort()"),
+        2 => println!("Rayon par_sort_unstable()"),
+        _ => {}
     }
-
-    let avg = measurements.iter().sum::<Duration>() / iterations as u32;
-    println!("Parallel Sort using {} threads: Avg {:?}", rayon::current_num_threads(), avg);
+    println!("Sizes: {:?}", sizes);
+    println!("{:?}", measurements);
 
 }
 
