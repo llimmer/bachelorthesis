@@ -74,7 +74,8 @@ pub fn main() {
         _ => {}
     }
     println!("Sizes: {:?}", sizes);
-    println!("{:?}", measurements);
+    // print times in seconds
+    println!("{:?}", measurements.iter().map(|d| d.as_secs_f64()).collect::<Vec<f64>>());
 
 }
 

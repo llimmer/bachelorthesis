@@ -29,7 +29,7 @@ name = "benchmark"
 harness = false
 
 [[bench]]
-name = "sequential"
+name = "distributions"
 harness = false
 
 [[bench]]
@@ -37,7 +37,7 @@ name = "parallel"
 harness = false
 
 [[bench]]
-name = "distributions"
+name = "parallel_factor"
 harness = false
 
 [profile.release]
