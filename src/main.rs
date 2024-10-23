@@ -60,11 +60,6 @@ impl PartialOrd for testEntry {
     }
 }
 
-use perf_event::events::{Hardware, Software};
-use perf_event::{Builder, Group};
-use rand_distr::Exp;
-use zipf::ZipfDistribution;
-
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::builder()
         .filter_level(LevelFilter::Error)
