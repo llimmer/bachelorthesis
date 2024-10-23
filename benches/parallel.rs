@@ -47,6 +47,12 @@ pub fn main() {
         }
     };
 
+    // warm-up
+    {
+        let mut data = generate_uniform(&mut StdRng::seed_from_u64(seed), sizes.into_iter().max().unwrap());
+        sort_parallel(&mut data);
+    }
+
     let mut measurements: Vec<Duration> = Vec::with_capacity(sizes.len());
     let mut rng = StdRng::seed_from_u64(seed);
     for i in 0..sizes.len() {
