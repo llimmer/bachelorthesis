@@ -42,7 +42,7 @@ pub fn parallel_sort_merge(mut nvme: NvmeDevice, len: usize) -> Result<NvmeDevic
 
     let mut cleanup_qpair = nvme.create_io_queue_pair(QUEUE_LENGTH)?;
     let mut cleanup_buffer = Dma::allocate(HUGE_PAGE_SIZE_2M)?;
-    let nvme = initialize_thread_local(nvme, NUM_THREADS);
+    //let nvme = initialize_thread_local(nvme, NUM_THREADS);
 
     println!("Starting parallel sorting. Len: {}, Max: {}, output_offset: {}", len, max, sort_offset);
     let initial_separators = sort_parallel_threadlocal(len, num_hugepages, sort_offset);
