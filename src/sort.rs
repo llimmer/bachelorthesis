@@ -48,7 +48,7 @@ pub fn sort_merge(mut nvme: NvmeDevice, len: usize, parallel: bool) -> Result<Nv
     if !parallel {
         sequential_sort_merge(nvme, len)
     } else {
-        nvme = initialize_thread_local(nvme, NUM_THREADS);
+        nvme = sort_merge_initialize_thread_local(nvme);
         parallel_sort_merge(nvme, len)
     }
 }
