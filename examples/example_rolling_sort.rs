@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn Error>>{
     };
 
     let mut nvme = vroom::init(&pci_addr)?;
-    nvme = rolling_sort(nvme, len, false)?;
+    nvme = rolling_sort(nvme, len)?;
 
     Ok(())
 }

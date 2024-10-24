@@ -20,24 +20,26 @@ impl IPS2RaSorter{
         //let mut input = String::new();
         //io::stdin().read_line(&mut input).unwrap();
 
-        if task.size <= THRESHOLD { //HUGE_PAGE_SIZE_2M/8 {
-            println!("Task-Size < Hugepage-Size/8 => Sequential sort");
-            let qpair = self.qpair.as_mut().unwrap();
-            let sort_buffer = self.sort_buffer.as_mut().unwrap();
-            read_write_hugepage_1G(qpair, task.start_lba, sort_buffer, false);
+        if task.size <= HUGE_PAGE_SIZE_2M/8 {
+            {
+                println!("Task-Size < Hugepage-Size/8 => Sequential sort");
+                let qpair = self.qpair.as_mut().unwrap();
+                let sort_buffer = self.sort_buffer.as_mut().unwrap();
+                read_write_hugepage_1G(qpair, task.start_lba, sort_buffer, false);
 
-            let u64slice= u8_to_u64_slice(&mut sort_buffer[0..task.size*8]);
-            println!("Read: {:?}", u64slice);
+                let u64slice = u8_to_u64_slice(&mut sort_buffer[0..task.size * 8]);
+                println!("Read: {:?}", u64slice);
 
-            let mut new_task = Task::new(u64slice, task.level, task.level_end);
+                let mut new_task = Task::new(u64slice, task.level, task.level_end);
 
-            let mut sorter = IPS2RaSorter::new_sequential(); // TODO: dont allocate new sorter, use self
-            sorter.sequential_rec(&mut new_task);
+                let mut sorter = IPS2RaSorter::new_sequential(); // TODO: dont allocate new sorter, use self
+                sorter.sequential_rec(&mut new_task);
 
-            println!("After sort: {:?}", new_task.arr);
-            // write back to ssd
-            read_write_hugepage_1G(qpair, task.start_lba, sort_buffer, true);
-            return;
+                println!("After sort: {:?}", new_task.arr);
+                // write back to ssd
+                read_write_hugepage_1G(qpair, task.start_lba, sort_buffer, true);
+                return;
+            }
         }
 
 

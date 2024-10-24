@@ -15,6 +15,8 @@ use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use rayon::{ThreadPoolBuilder};
 use log::{debug, info, LevelFilter};
+use rand::prelude::StdRng;
+use rand::{Rng, SeedableRng};
 
 thread_local! {
     static SORTER: RefCell<IPS2RaSorter> = RefCell::new(*IPS2RaSorter::new_parallel());
@@ -546,6 +548,31 @@ fn calculate_lba(idx: usize, start_lba: usize, i: usize, input_length: usize) ->
     assert_eq!(input_length % LBA_SIZE, 0, "Input length must be a multiple of LBA_SIZE");
     //debug!("Calculating lba: i={}, input_length={}, start_lba={}, idx={} => i*input_length/LBA_SIZE + start_lba + idx*8/LBA_SIZE = {}", i, input_length, start_lba, idx, i * input_length / LBA_SIZE + start_lba + idx * 8 / LBA_SIZE);
     (i * input_length / LBA_SIZE + start_lba + idx * 8 / LBA_SIZE, 0)
+}
+
+pub fn prepare_benchmark_parallel(num_hugepages: usize, seed: usize) { // Use for benchmarking only!!
+    // assume thread-local sorters are initialized
+    println!("Preparing benchmark with {} hugepages", num_hugepages);
+    fn generate_uniform(rng: &mut StdRng, size: usize) -> Vec<u64> {
+        (0..size).map(|_| rng.gen::<u64>()).collect()
+    }
+
+    (0..num_hugepages).into_par_iter().for_each(|i| {
+        println!("Thread {} preparing hugepage {}", rayon::current_thread_index().unwrap(), i);
+        let mut rng = StdRng::seed_from_u64((i + seed) as u64 * seed as u64);
+        //let mut data = generate_uniform(&mut rng, HUGE_PAGE_SIZE_1G / 8);
+        let mut data: Vec<u64> = (0..HUGE_PAGE_SIZE_1G as u64 / 8).collect();
+        SORTER.with(|sorter| {
+            let mut sorter = sorter.borrow_mut();
+            let mut buffer = sorter.sort_buffer.take().unwrap();
+            let mut qpair = sorter.qpair.take().unwrap();
+            &buffer[0..HUGE_PAGE_SIZE_1G].copy_from_slice(&u64_to_u8_slice(&mut data));
+            read_write_hugepage_1G(&mut qpair, i * LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G, &mut buffer, true);
+
+            sorter.sort_buffer = Some(buffer);
+            sorter.qpair = Some(qpair);
+        });
+    });
 }
 
 

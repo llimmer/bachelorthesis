@@ -3,7 +3,7 @@ use crate::conversion::*;
 use crate::sorter::{ExtTask, IPS2RaSorter, Task};
 use crate::setup::{clear_chunks, setup_array};
 use crate::sequential_sort_merge::sequential_sort_merge;
-use crate::parallel_sort_merge::{initialize_thread_local, parallel_sort_merge};
+use crate::parallel_sort_merge::{initialize_thread_local, parallel_sort_merge, prepare_benchmark_parallel};
 use crate::parallel::parallel_rec;
 use vroom::{NvmeDevice, NvmeQueuePair, QUEUE_LENGTH};
 use vroom::memory::{Dma, DmaSlice};
@@ -48,11 +48,7 @@ pub fn sort_merge(mut nvme: NvmeDevice, len: usize, parallel: bool) -> Result<Nv
     if !parallel {
         sequential_sort_merge(nvme, len)
     } else {
-        initialize_thread_pool();
-        if !EXT_MERGE_SORTERS_INITIALIZED.fetch_or(true, std::sync::atomic::Ordering::Relaxed) {
-            nvme = initialize_thread_local(nvme, NUM_THREADS);
-        }
-
+        nvme = initialize_thread_local(nvme, NUM_THREADS);
         parallel_sort_merge(nvme, len)
     }
 }
@@ -68,6 +64,7 @@ pub fn initialize_thread_pool() {
 }
 
 pub fn sort_merge_initialize_thread_local(mut nvme: NvmeDevice) -> NvmeDevice {
+    initialize_thread_pool();
     if !EXT_MERGE_SORTERS_INITIALIZED.fetch_or(true, std::sync::atomic::Ordering::Relaxed) {
         nvme = initialize_thread_local(nvme, NUM_THREADS);
     }
@@ -75,22 +72,16 @@ pub fn sort_merge_initialize_thread_local(mut nvme: NvmeDevice) -> NvmeDevice {
 }
 
 
-pub fn rolling_sort(mut nvme: NvmeDevice, len: usize, parallel: bool) -> Result<NvmeDevice, Box<dyn Error>> {
-    if(!parallel){
-        let mut qpair = nvme.create_io_queue_pair(QUEUE_LENGTH)?;
-        let mut sort_buffer = Dma::allocate(HUGE_PAGE_SIZE_1G)?;
-
-        let mut buffers: Vec<Dma<u8>> = Vec::new();
-        for _ in 0..HUGE_PAGES_2M {
-            buffers.push(Dma::allocate(HUGE_PAGE_SIZE_2M)?);
-        }
-
-        let mut sorter = IPS2RaSorter::new_ext_sequential(qpair, buffers, sort_buffer);
-        let mut task = ExtTask::new(0, 0, len, 6, 8);
-        sorter.sequential_rolling_sort(&mut task);
-    } else {
-        unimplemented!();
+pub fn rolling_sort(mut nvme: NvmeDevice, len: usize) -> Result<NvmeDevice, Box<dyn Error>> {
+    let mut qpair = nvme.create_io_queue_pair(QUEUE_LENGTH)?;
+    let mut sort_buffer = Dma::allocate(HUGE_PAGE_SIZE_1G)?;
+    let mut buffers: Vec<Dma<u8>> = Vec::new();
+    for _ in 0..HUGE_PAGES_2M {
+        buffers.push(Dma::allocate(HUGE_PAGE_SIZE_2M)?);
     }
+    let mut sorter = IPS2RaSorter::new_ext_sequential(qpair, buffers, sort_buffer);
+    let mut task = ExtTask::new(0, 0, len, 6, 8);
+    sorter.sequential_rolling_sort(&mut task);
 
     Ok(nvme)
 }
@@ -182,4 +173,10 @@ impl IPS2RaSorter{
         let sort_buffer = self.sort_buffer.as_mut().unwrap();
         read_write_elements(qpair, sort_buffer, lba_offset, 0, HUGE_PAGE_SIZE_2M/8, write);
     }
+}
+
+pub fn prepare_benchmark(mut nvme: NvmeDevice, num_hugepages: usize, seed: usize) -> NvmeDevice {
+    nvme = sort_merge_initialize_thread_local(nvme);
+    prepare_benchmark_parallel(num_hugepages, seed);
+    nvme
 }
