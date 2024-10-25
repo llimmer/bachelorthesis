@@ -51,6 +51,12 @@ harness = false
 name = "rolling_sort"
 harness = false
 
+[[bench]]
+name = "external_sort"
+harness = false
+
+
+
 [profile.release]
 debug = true
 
