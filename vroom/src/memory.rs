@@ -9,6 +9,7 @@ use std::os::fd::{AsRawFd, RawFd};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::{fs, mem, process, ptr};
+use std::fmt::Debug;
 use std::ops::{Deref, DerefMut, Index, IndexMut, Range, RangeTo, RangeFull};
 
 // from https://www.kernel.org/doc/Documentation/x86/x86_64/mm.txt
@@ -35,6 +36,16 @@ pub struct Dma<T> {
     pub virt: *mut T,
     pub phys: usize,
     pub size: usize,
+}
+
+impl Debug for Dma<u8> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Dma")
+            .field("virt", &self.virt)
+            .field("phys", &self.phys)
+            .field("size", &self.size)
+            .finish()
+    }
 }
 
 // should be safe

@@ -1,6 +1,7 @@
 use crate::cmd::NvmeCommand;
 use crate::memory::*;
 use std::error::Error;
+use std::fmt::Debug;
 use std::hint::spin_loop;
 
 /// NVMe spec 4.6
@@ -34,6 +35,17 @@ pub struct NvmeSubQueue {
     pub tail: usize,
     len: usize,
     pub doorbell: usize,
+}
+
+impl Debug for NvmeSubQueue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NvmeSubQueue")
+            .field("head", &self.head)
+            .field("tail", &self.tail)
+            .field("len", &self.len)
+            .field("doorbell", &self.doorbell)
+            .finish()
+    }
 }
 
 impl NvmeSubQueue {
@@ -84,6 +96,17 @@ pub struct NvmeCompQueue {
     phase: bool,
     len: usize,
     pub doorbell: usize,
+}
+
+impl Debug for NvmeCompQueue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NvmeCompQueue")
+            .field("head", &self.head)
+            .field("phase", &self.phase)
+            .field("len", &self.len)
+            .field("doorbell", &self.doorbell)
+            .finish()
+    }
 }
 
 // TODO: error handling

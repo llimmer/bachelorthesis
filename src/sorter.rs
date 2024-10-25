@@ -3,6 +3,7 @@ use vroom::memory::Dma;
 use vroom::{NvmeQueuePair};
 use std::fmt;
 use std::fmt::{Debug, Display};
+#[derive(Debug)]
 pub struct Task<'a> {
     pub arr: &'a mut [u64],
     pub level: usize,

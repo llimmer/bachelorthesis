@@ -17,11 +17,13 @@ use rayon::{ThreadPoolBuilder};
 use log::{debug, info, LevelFilter};
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
+//use tracing::{instrument, span, Level};
 
 thread_local! {
     static SORTER: RefCell<IPS2RaSorter> = RefCell::new(*IPS2RaSorter::new_parallel());
 }
 
+//#[instrument]
 pub fn parallel_sort_merge(mut nvme: NvmeDevice, len: usize) -> Result<NvmeDevice, Box<dyn Error>> {
     let num_hugepages = (len + HUGE_PAGE_SIZE_1G / 8 - 1) / (HUGE_PAGE_SIZE_1G / 8);
     //info!("Sorting and merging {} hugepages (len: {len})", num_hugepages);
@@ -93,6 +95,7 @@ pub fn initialize_thread_local(nvme: NvmeDevice, num_buffer: usize) -> NvmeDevic
     }
 }
 
+//#[instrument]
 fn sort_parallel_threadlocal(len: usize, num_hugepages: usize, write_offset: usize) -> Vec<Vec<u64>> {
     let local_separators: Arc<Mutex<Vec<Vec<u64>>>> = Arc::new(Mutex::new(vec![Vec::new(); num_hugepages]));
 
@@ -134,6 +137,7 @@ fn sort_parallel_threadlocal(len: usize, num_hugepages: usize, write_offset: usi
     mem::take(&mut *separators_guard)
 }
 
+//#[instrument]
 pub fn merge_parallel(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, initial_separators: Vec<Vec<u64>>, len: usize, mut num_hugepages: usize, max: usize, mut start_lba: usize, mut output_lba: usize) {
     debug!("Total number of hugepages: {num_hugepages}, start_lba: {start_lba}, output_lba: {output_lba}");
 
@@ -199,6 +203,7 @@ pub fn merge_parallel(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, initial_s
 }
 
 
+//#[instrument]
 fn prepare_thread_merge(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, global_separators: &Vec<u64>, start_lba: usize, write_lba: usize, input_length: usize, remaining_hugepages: usize, last_length: usize) {
     info!("Preparing thread merge with global separators: {:?}, start_lba: {}, write_lba: {}, input_length: {}, remaining_hugepages: {}", global_separators, start_lba, write_lba, input_length, remaining_hugepages);
     let remainders: Arc<Mutex<Vec<Vec<u64>>>> = Arc::new(Mutex::new(vec![Vec::new(); NUM_THREADS]));
@@ -255,6 +260,9 @@ fn prepare_thread_merge(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, global_
         let mut remainders_locked = remainders.lock().unwrap();
         remainders_locked[thread_id] = merge_result;
     });
+
+    //let span = span!(Level::INFO, "cleanup");
+    //let _enter = span.enter();
 
     // Cleanup:
     info!("Starting cleanup");
@@ -485,10 +493,9 @@ impl IPS2RaSorter {
 //vec![vec![2048, 4096, 6144], vec![4096, 8192, 12288]];
 
 pub fn compute_local_separators(input: &[u64], num_separators: usize) -> Vec<u64> {
-    let chunk_size = input.len() / (num_separators + 1);
+    let chunk_size: f64 = input.len() as f64 / (num_separators + 1) as f64;
     (1..=num_separators)
-        // Pick equidistant separators from local array
-        .map(|i| input[i * chunk_size])
+        .map(|i| input[(i as f64* chunk_size) as usize]) // Pick equidistant separators from local array
         .collect()
 }
 

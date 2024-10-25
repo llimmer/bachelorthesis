@@ -15,6 +15,7 @@ use std::error::Error;
 use rand::prelude::{SliceRandom, StdRng};
 use rand::SeedableRng;
 use log::{debug, error, info};
+//use tracing::{instrument, span, Level};
 
 static THREAD_POOL_INITIALIZED: AtomicBool = AtomicBool::new(false);
 static EXT_MERGE_SORTERS_INITIALIZED: AtomicBool = AtomicBool::new(false);
@@ -30,6 +31,7 @@ pub fn sort(arr: &mut [u64]) {
     s.sequential_rec(&mut task);
 }
 
+//#[instrument]
 pub fn sort_parallel(arr: &mut [u64]) {
     //read line from stdin
     //let mut input = String::new();
@@ -44,6 +46,7 @@ pub fn sort_parallel(arr: &mut [u64]) {
     parallel_rec(&mut initial_task);
 }
 
+
 pub fn sort_merge(mut nvme: NvmeDevice, len: usize, parallel: bool) -> Result<NvmeDevice, Box<dyn Error>>{
     if !parallel {
         sequential_sort_merge(nvme, len)
@@ -53,15 +56,20 @@ pub fn sort_merge(mut nvme: NvmeDevice, len: usize, parallel: bool) -> Result<Nv
     }
 }
 
+
 pub fn initialize_thread_pool() {
+    println!("Atomic bool: {}", THREAD_POOL_INITIALIZED.load(std::sync::atomic::Ordering::Relaxed));
     if !THREAD_POOL_INITIALIZED.fetch_or(true, std::sync::atomic::Ordering::Relaxed) {
         println!("Initializing thread pool with {} threads", NUM_THREADS);
         rayon::ThreadPoolBuilder::new().
             num_threads(NUM_THREADS).
             build_global().
             unwrap();
+        println!("Atomic bool: {}", THREAD_POOL_INITIALIZED.load(std::sync::atomic::Ordering::Relaxed));
     }
+
 }
+
 
 pub fn sort_merge_initialize_thread_local(mut nvme: NvmeDevice) -> NvmeDevice {
     initialize_thread_pool();
@@ -85,6 +93,7 @@ pub fn rolling_sort(mut nvme: NvmeDevice, len: usize) -> Result<NvmeDevice, Box<
 
     Ok(nvme)
 }
+
 
 pub fn find_bucket_ips2ra(input: u64, level: usize) -> usize {
     let bits_needed = (K as f64).log2().ceil() as u64;
@@ -149,10 +158,12 @@ pub fn read_write_elements(qpair: &mut NvmeQueuePair, buffer: &mut Dma<u8>, targ
 
 }
 
+//#[instrument]
 pub fn read_write_hugepage_1G(qpair: &mut NvmeQueuePair, lba_offset: usize, segment: &mut Dma<u8>, write: bool){
     read_write_elements(qpair, segment, lba_offset, 0, HUGE_PAGE_SIZE_1G/8, write);
 }
 
+//#[instrument]
 pub fn read_write_hugepage_2M(qpair: &mut NvmeQueuePair, lba_offset: usize, segment: &mut Dma<u8>, write: bool){
     read_write_elements(qpair, segment, lba_offset, 0, HUGE_PAGE_SIZE_2M/8, write);
 }

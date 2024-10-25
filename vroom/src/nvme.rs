@@ -5,6 +5,7 @@ use crate::queues::*;
 use crate::{NvmeNamespace, NvmeStats, HUGE_PAGE_SIZE_2M};
 use std::collections::HashMap;
 use std::error::Error;
+use std::fmt::{Debug, Formatter};
 use std::hint::spin_loop;
 
 // clippy doesnt like this
@@ -96,6 +97,16 @@ pub struct NvmeQueuePair {
     pub id: u16,
     pub sub_queue: NvmeSubQueue,
     comp_queue: NvmeCompQueue,
+}
+
+impl Debug for NvmeQueuePair {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NvmeQueuePair")
+            .field("id", &self.id)
+            .field("sub_queue", &self.sub_queue)
+            .field("comp_queue", &self.comp_queue)
+            .finish()
+    }
 }
 
 impl NvmeQueuePair {
@@ -209,6 +220,28 @@ pub struct NvmeDevice {
     pub namespaces: HashMap<u32, NvmeNamespace>,
     pub stats: NvmeStats,
     q_id: u16,
+}
+
+
+
+impl Debug for NvmeDevice {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NvmeDevice")
+            .field("pci_addr", &self.pci_addr)
+            .field("addr", &self.addr)
+            .field("len", &self.len)
+            .field("dstrd", &self.dstrd)
+            .field("admin_sq", &self.admin_sq)
+            .field("admin_cq", &self.admin_cq)
+            .field("io_sq", &self.io_sq)
+            //.field("io_cq", &self.io_cq)
+            .field("buffer", &self.buffer)
+            //.field("prp_list", &self.prp_list)
+            .field("namespaces", &self.namespaces)
+            .field("stats", &self.stats)
+            .field("q_id", &self.q_id)
+            .finish()
+    }
 }
 
 // TODO

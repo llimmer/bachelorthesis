@@ -13,22 +13,14 @@ mod setup;
 mod parallel_sort_merge;
 mod rolling_sort;
 mod sequential_sort_merge;
-
 use crate::config::*;
-use crate::conversion::*;
-use crate::sort::{read_write_hugepage_1G, sort, sort_parallel};
-use crate::parallel_sort_merge::{parallel_sort_merge};
-use crate::setup::{clear_chunks};
-use vroom::memory::{Dma, DmaSlice};
-use vroom::QUEUE_LENGTH;
+use vroom::memory::{DmaSlice};
 use std::error::Error;
-use std::io;
-use std::time::Instant;
 use rand::prelude::*;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use log::LevelFilter;
-
+use bachelorthesis::{sort_merge, sort_parallel};
 
 fn verify_sorted(arr: &[u64]) {
     for i in 1..arr.len() {
@@ -60,11 +52,88 @@ impl PartialOrd for testEntry {
     }
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+use rand::prelude::*;
+use std::{env};
+use std::time::Duration;
+use rayon::prelude::ParallelSliceMut;
+use crate::sort::prepare_benchmark;
+
+//use tracing::{info, span, Level};
+//use tracing_perfetto::PerfettoLayer;
+//use tracing_subscriber::{registry::Registry, prelude::*};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::builder()
-        .filter_level(LevelFilter::Error)
+        .filter_level(log::LevelFilter::Error)
         .init();
-    let mut rng = StdRng::seed_from_u64(12345);
+
+    //let file = std::sync::Mutex::new(std::fs::File::create("/home/l/test.json")?);
+    //let perfetto_layer = PerfettoLayer::new(file);
+//
+    //let subscriber = Registry::default().with(perfetto_layer);
+    //tracing::subscriber::set_global_default(subscriber)?;
+
+    // Create a span to be captured in the trace
+    //let span = span!(Level::INFO, "main_span");
+    //let _enter = span.enter();
+
+    let mut nvme = vroom::init("0000:00:04.0")?;
+    nvme = prepare_benchmark(nvme, 9, 12345);
+
+    sort_merge(nvme, 9 * HUGE_PAGE_SIZE_1G/8, true)?;
+
+
+
+
+   /* // Add some events to the trace
+    info!("Starting the sorting process");
+
+    // Simulate parallel sort or other work
+    let mut rng = rand::rngs::StdRng::seed_from_u64(12345);
+    let mut data: Vec<u64> = generate_uniform(&mut rng, 50_000_000);
+
+    sort_parallel(&mut data);*/
+
+
+    return Ok(());
+
+
+
+
+
+    println!("Starting benchmark");
+    let mut args = env::args();
+    args.next();
+    let pci_addr = "0000:00:04.0".to_string();
+
+    let iterations = 1;
+    let seed = 12345;
+
+    let hugepages = [9];
+
+    let mut nvme = vroom::init(&pci_addr)?;
+    let mut measurements: Vec<Duration> = Vec::with_capacity(hugepages.len());
+
+    for i in 0..hugepages.len() {
+        let mut local_measurements: Vec<Duration> = Vec::with_capacity(iterations);
+        for _ in 0..iterations {
+            nvme = prepare_benchmark(nvme, hugepages[i], seed as usize);
+            let mut start = std::time::Instant::now();
+            nvme = sort_merge(nvme, hugepages[i] * HUGE_PAGE_SIZE_1G / 8, true)?;
+            let duration = start.elapsed();
+            local_measurements.push(duration);
+        }
+        let avg = local_measurements.iter().sum::<Duration>() / iterations as u32;
+        measurements.push(avg);
+    }
+    // print as table
+
+    println!("Number of hugepages: {:?}", hugepages);
+    // print times in seconds
+    println!("{:?}", measurements.iter().map(|d| d.as_secs_f64()).collect::<Vec<f64>>());
+
+
+    /* let mut rng = StdRng::seed_from_u64(12345);
     let mut data = generate_eight_dup(100000);
     println!("Data: {:?}", data);
     let mut start = Instant::now();
@@ -72,7 +141,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Sequential: {:?}", start.elapsed());
 
     return Ok(());
-
+*/
 
     /*// A `Group` lets us enable and disable several counters atomically.
     let mut group = Group::new()?;
