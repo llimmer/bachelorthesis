@@ -579,7 +579,7 @@ pub fn prepare_benchmark_parallel(num_hugepages: usize, seed: usize) { // Use fo
 // like parallel_sort_merge, only with time measurements
 // Mode 0: only sort
 // Mode 1: merge (sort required)
-pub fn benchmark_parallel_sort_merge(mut nvme: NvmeDevice, len: usize, mode: usize) -> Result<(NvmeDevice, Duration), Box<dyn Error>> {
+pub fn bench_parallel_sort_merge(mut nvme: NvmeDevice, len: usize, mode: usize) -> Result<(NvmeDevice, Duration), Box<dyn Error>> {
     let num_hugepages = (len + HUGE_PAGE_SIZE_1G / 8 - 1) / (HUGE_PAGE_SIZE_1G / 8);
 
     let max = (num_hugepages as f64).log((NUM_THREADS) as f64).ceil() as usize;

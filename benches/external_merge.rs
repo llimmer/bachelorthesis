@@ -3,8 +3,6 @@
 use std::env;
 use std::error::Error;
 use std::time::Duration;
-use vroom::{NvmeDevice, QUEUE_LENGTH};
-use vroom::memory::Dma;
 use bachelorthesis::{prepare_benchmark, HUGE_PAGE_SIZE_1G, NUM_THREADS, LBA_PER_CHUNK, CHUNKS_PER_HUGE_PAGE_1G, HUGE_PAGE_SIZE_2M, benchmark_parallel_sort_merge};
 
 pub fn main() -> Result<(), Box<dyn Error>> {

@@ -3,7 +3,7 @@ use crate::conversion::*;
 use crate::sorter::{ExtTask, IPS2RaSorter, Task};
 use crate::setup::{clear_chunks, setup_array};
 use crate::sequential_sort_merge::sequential_sort_merge;
-use crate::parallel_sort_merge::{initialize_thread_local, parallel_sort_merge, prepare_benchmark_parallel};
+use crate::parallel_sort_merge::{bench_parallel_sort_merge, initialize_thread_local, parallel_sort_merge, prepare_benchmark_parallel};
 use crate::parallel::parallel_rec;
 use vroom::{NvmeDevice, NvmeQueuePair, QUEUE_LENGTH};
 use vroom::memory::{Dma, DmaSlice};
@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::{io, thread};
 use std::error::Error;
+use std::time::Duration;
 use rand::prelude::{SliceRandom, StdRng};
 use rand::SeedableRng;
 use log::{debug, error, info};
@@ -188,4 +189,12 @@ pub fn prepare_benchmark(mut nvme: NvmeDevice, num_hugepages: usize, seed: usize
     nvme = sort_merge_initialize_thread_local(nvme);
     prepare_benchmark_parallel(num_hugepages, seed);
     nvme
+}
+
+// like parallel_sort_merge, only with time measurements
+// Mode 0: only sort
+// Mode 1: merge (sort required)
+pub fn benchmark_parallel_sort_merge(mut nvme: NvmeDevice, len: usize, mode: usize) -> Result<(NvmeDevice, Duration), Box<dyn Error>> {
+    nvme = sort_merge_initialize_thread_local(nvme);
+    bench_parallel_sort_merge(nvme, len, mode)
 }

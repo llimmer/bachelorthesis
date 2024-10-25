@@ -3,7 +3,7 @@
 use std::env;
 use std::error::Error;
 use std::time::Duration;
-use bachelorthesis::{prepare_benchmark, HUGE_PAGE_SIZE_1G, sort_parallel_threadlocal, benchmark_parallel_sort_merge};
+use bachelorthesis::{prepare_benchmark, HUGE_PAGE_SIZE_1G, benchmark_parallel_sort_merge};
 
 pub fn main() -> Result<(), Box<dyn Error>> {
     let mut args = env::args();
