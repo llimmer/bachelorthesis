@@ -11,13 +11,13 @@ use std::cmp::Ordering::{Equal, Greater, Less};
 use std::collections::{BinaryHeap};
 use std::{io, mem};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use rayon::{ThreadPoolBuilder};
 use log::{debug, info, LevelFilter};
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
-//use tracing::{instrument, span, Level};
 
 thread_local! {
     static SORTER: RefCell<IPS2RaSorter> = RefCell::new(*IPS2RaSorter::new_parallel());
@@ -26,7 +26,6 @@ thread_local! {
 //#[instrument]
 pub fn parallel_sort_merge(mut nvme: NvmeDevice, len: usize) -> Result<NvmeDevice, Box<dyn Error>> {
     let num_hugepages = (len + HUGE_PAGE_SIZE_1G / 8 - 1) / (HUGE_PAGE_SIZE_1G / 8);
-    //info!("Sorting and merging {} hugepages (len: {len})", num_hugepages);
 
     let max = (num_hugepages as f64).log((NUM_THREADS) as f64).ceil() as usize;
     let sort_offset =
@@ -44,24 +43,13 @@ pub fn parallel_sort_merge(mut nvme: NvmeDevice, len: usize) -> Result<NvmeDevic
 
     let mut cleanup_qpair = nvme.create_io_queue_pair(QUEUE_LENGTH)?;
     let mut cleanup_buffer = Dma::allocate(HUGE_PAGE_SIZE_2M)?;
-    //let nvme = initialize_thread_local(nvme, NUM_THREADS);
-
-    // TODO: remove time measurements
 
     println!("Starting parallel sorting. Len: {}, Max: {}, output_offset: {}", len, max, sort_offset);
-    let mut start = std::time::Instant::now();
     let initial_separators = sort_parallel_threadlocal(len, num_hugepages, sort_offset);
-    println!("Parallel sorting took {:?}", start.elapsed());
     info!("Done");
 
-    // read line from stdin
-    //let mut input = String::new();
-    // std::io::stdin().read_line(&mut input).unwrap();
-
     println!("Starting parallel merging");
-    let mut start = std::time::Instant::now();
     merge_parallel(&mut cleanup_qpair, &mut cleanup_buffer, initial_separators, len, num_hugepages, max, sort_offset, merge_offset);
-    println!("Parallel merging took {:?}", start.elapsed());
     info!("Done");
 
     Ok(nvme)
@@ -586,6 +574,45 @@ pub fn prepare_benchmark_parallel(num_hugepages: usize, seed: usize) { // Use fo
             sorter.qpair = Some(qpair);
         });
     });
+}
+
+// like parallel_sort_merge, only with time measurements
+// Mode 0: only sort
+// Mode 1: merge (sort required)
+pub fn benchmark_parallel_sort_merge(mut nvme: NvmeDevice, len: usize, mode: usize) -> Result<(NvmeDevice, Duration), Box<dyn Error>> {
+    let num_hugepages = (len + HUGE_PAGE_SIZE_1G / 8 - 1) / (HUGE_PAGE_SIZE_1G / 8);
+
+    let max = (num_hugepages as f64).log((NUM_THREADS) as f64).ceil() as usize;
+    let sort_offset =
+        if max % 2 == 0 {
+            0
+        } else {
+            num_hugepages * LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G
+        };
+    let merge_offset =
+        if max % 2 == 0 {
+            num_hugepages * LBA_PER_CHUNK * CHUNKS_PER_HUGE_PAGE_1G
+        } else {
+            0
+        };
+
+    let mut cleanup_qpair = nvme.create_io_queue_pair(QUEUE_LENGTH)?;
+    let mut cleanup_buffer = Dma::allocate(HUGE_PAGE_SIZE_2M)?;
+
+    if mode == 0 {
+        let mut start = std::time::Instant::now();
+        sort_parallel_threadlocal(len, num_hugepages, sort_offset);
+        let duration = start.elapsed();
+        return Ok((nvme, duration));
+    }
+
+    let initial_separators = sort_parallel_threadlocal(len, num_hugepages, sort_offset);
+    println!("Starting parallel merging");
+    let mut start = std::time::Instant::now();
+    merge_parallel(&mut cleanup_qpair, &mut cleanup_buffer, initial_separators, len, num_hugepages, max, sort_offset, merge_offset);
+    let duration = start.elapsed();
+
+    Ok((nvme, duration))
 }
 
 

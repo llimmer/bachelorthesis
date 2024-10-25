@@ -55,6 +55,9 @@ harness = false
 name = "external_sort"
 harness = false
 
+[[bench]]
+name = "external_merge"
+harness = false
 
 
 [profile.release]

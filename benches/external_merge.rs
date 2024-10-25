@@ -3,7 +3,9 @@
 use std::env;
 use std::error::Error;
 use std::time::Duration;
-use bachelorthesis::{prepare_benchmark, HUGE_PAGE_SIZE_1G, sort_parallel_threadlocal, benchmark_parallel_sort_merge};
+use vroom::{NvmeDevice, QUEUE_LENGTH};
+use vroom::memory::Dma;
+use bachelorthesis::{prepare_benchmark, HUGE_PAGE_SIZE_1G, NUM_THREADS, LBA_PER_CHUNK, CHUNKS_PER_HUGE_PAGE_1G, HUGE_PAGE_SIZE_2M, benchmark_parallel_sort_merge};
 
 pub fn main() -> Result<(), Box<dyn Error>> {
     let mut args = env::args();
@@ -47,7 +49,7 @@ pub fn main() -> Result<(), Box<dyn Error>> {
         for _ in 0..iterations {
             nvme = prepare_benchmark(nvme, hugepages[i], seed as usize);
             let duration;
-            (nvme, duration) = benchmark_parallel_sort_merge(nvme, HUGE_PAGE_SIZE_1G/8, 0)?;
+            (nvme, duration) = benchmark_parallel_sort_merge(nvme, HUGE_PAGE_SIZE_1G/8, 1)?;
             local_measurements.push(duration);
         }
         measurements.push(local_measurements);
