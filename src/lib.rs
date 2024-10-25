@@ -17,6 +17,7 @@ mod rolling_sort;
 mod sequential_sort_merge;
 
 pub use sort::*;
+use parallel_sort_merge::sort_parallel_threadlocal;
 pub use base_case::insertion_sort;
 pub use setup::{clear_chunks, setup_array};
 pub use config::*;

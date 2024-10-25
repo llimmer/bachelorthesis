@@ -102,7 +102,7 @@ pub fn initialize_thread_local(nvme: NvmeDevice, num_buffer: usize) -> NvmeDevic
 }
 
 //#[instrument]
-fn sort_parallel_threadlocal(len: usize, num_hugepages: usize, write_offset: usize) -> Vec<Vec<u64>> {
+pub fn sort_parallel_threadlocal(len: usize, num_hugepages: usize, write_offset: usize) -> Vec<Vec<u64>> {
     let local_separators: Arc<Mutex<Vec<Vec<u64>>>> = Arc::new(Mutex::new(vec![Vec::new(); num_hugepages]));
 
     (0..num_hugepages).into_par_iter().for_each(|i| {
