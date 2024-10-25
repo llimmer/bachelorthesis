@@ -46,8 +46,12 @@ pub fn parallel_sort_merge(mut nvme: NvmeDevice, len: usize) -> Result<NvmeDevic
     let mut cleanup_buffer = Dma::allocate(HUGE_PAGE_SIZE_2M)?;
     //let nvme = initialize_thread_local(nvme, NUM_THREADS);
 
+    // TODO: remove time measurements
+
     println!("Starting parallel sorting. Len: {}, Max: {}, output_offset: {}", len, max, sort_offset);
+    let mut start = std::time::Instant::now();
     let initial_separators = sort_parallel_threadlocal(len, num_hugepages, sort_offset);
+    info!("Parallel sorting took {:?}", start.elapsed());
     info!("Done");
 
     // read line from stdin
@@ -55,7 +59,9 @@ pub fn parallel_sort_merge(mut nvme: NvmeDevice, len: usize) -> Result<NvmeDevic
     // std::io::stdin().read_line(&mut input).unwrap();
 
     println!("Starting parallel merging");
+    let mut start = std::time::Instant::now();
     merge_parallel(&mut cleanup_qpair, &mut cleanup_buffer, initial_separators, len, num_hugepages, max, sort_offset, merge_offset);
+    info!("Parallel merging took {:?}", start.elapsed());
     info!("Done");
 
     Ok(nvme)
