@@ -16,6 +16,7 @@ use std::time::Duration;
 use rand::prelude::{SliceRandom, StdRng};
 use rand::SeedableRng;
 use log::{debug, error, info};
+use crate::sampling::sample_max;
 //use tracing::{instrument, span, Level};
 
 static THREAD_POOL_INITIALIZED: AtomicBool = AtomicBool::new(false);
@@ -81,7 +82,8 @@ pub fn sort_merge_initialize_thread_local(mut nvme: NvmeDevice) -> NvmeDevice {
 }
 
 
-pub fn rolling_sort(mut nvme: NvmeDevice, len: usize) -> Result<NvmeDevice, Box<dyn Error>> {
+pub fn rolling_sort(mut nvme: NvmeDevice, len: usize, max: usize) -> Result<NvmeDevice, Box<dyn Error>> {
+    println!("Rolling sort - Preparation");
     let mut qpair = nvme.create_io_queue_pair(QUEUE_LENGTH)?;
     let mut sort_buffer = Dma::allocate(HUGE_PAGE_SIZE_1G)?;
     let mut buffers: Vec<Dma<u8>> = Vec::new();
@@ -89,7 +91,8 @@ pub fn rolling_sort(mut nvme: NvmeDevice, len: usize) -> Result<NvmeDevice, Box<
         buffers.push(Dma::allocate(HUGE_PAGE_SIZE_2M)?);
     }
     let mut sorter = IPS2RaSorter::new_ext_sequential(qpair, buffers, sort_buffer);
-    let mut task = ExtTask::new(0, 0, len, 6, 8);
+    let mut task = ExtTask::new(0, 0, len, sample_max(max), 8);
+    println!("Starting rolling sort: Start-LBA: {}, Offset: {}, Size: {} ", task.start_lba, task.offset, task.size);
     sorter.sequential_rolling_sort(&mut task);
 
     Ok(nvme)

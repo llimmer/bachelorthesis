@@ -98,16 +98,15 @@ impl<'a> Task<'_> {
         }
     }
 
-    pub fn sample_untouched(&mut self) { // FOR DEBUG ONLY
-        let max = self.arr.iter().max().unwrap();
-        let lz = max.leading_zeros();
-        let klog2 = (K as u64).ilog2();
-        let zero_blocks = (lz as f64 / klog2 as f64).floor() as u32;
-        self.level = zero_blocks as usize;
-        self.level_end = 8;
-    }
+
 }
 
+pub fn sample_max(max: usize) -> usize{
+    let lz = max.leading_zeros();
+    let klog2 = (K as u64).ilog2();
+    let zero_blocks = (lz as f64 / klog2 as f64).floor() as u32;
+    zero_blocks as usize
+}
 
 impl IPS2RaSorter {
     pub fn sample(&mut self, task: &mut ExtTask) {

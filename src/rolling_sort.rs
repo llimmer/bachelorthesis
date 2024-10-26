@@ -11,7 +11,7 @@ impl IPS2RaSorter{
             debug!("Sampling Task");
             self.sample(task);
         }
-        debug!("Sequential rolling sort: Start-LBA: {}, Offset: {}, Size: {}, Level: {} ", task.start_lba, task.offset, task.size, task.level);
+        println!("Sequential rolling sort: Start-LBA: {}, Offset: {}, Size: {}, Level: {} ", task.start_lba, task.offset, task.size, task.level);
 
         if task.size <= HUGE_PAGE_SIZE_1G/8 {
             {
@@ -24,7 +24,7 @@ impl IPS2RaSorter{
                 debug!("Read: {:?}", u64slice);
 
                 let mut new_task = Task::new(u64slice, task.level, task.level_end);
-                
+
                 self.sequential_rec(&mut new_task);
 
                 debug!("After sort: {:?}", new_task.arr);
@@ -37,14 +37,14 @@ impl IPS2RaSorter{
         }
 
 
-        debug!("Classification");
+        println!("Classification");
         self.classify_ext(task);
         debug!("Classified elements: {}", self.classified_elements);
 
-        debug!("Permutation");
+        println!("Permutation");
         self.permutate_blocks_ext(task);
 
-        debug!("Cleanup");
+        println!("Cleanup");
         self.cleanup_ext(task);
 
         //read_write_hugepage(self.qpair.as_mut().unwrap(), task.start_lba, self.sort_buffer.as_mut().unwrap(), false);
@@ -67,7 +67,7 @@ impl IPS2RaSorter{
             let new_start_lba = task.start_lba + (task.offset + sum)*8/LBA_SIZE;
             let new_offset = (task.offset + sum)%(LBA_SIZE/8);
             let mut new_task = ExtTask::new(new_start_lba, new_offset, new_size, task.level+1, task.level_end);
-            debug!("Added new task. Start LBA: {}, Offset: {}, Size: {}, Level: {}", new_start_lba, new_offset, new_size, task.level+1);
+            println!("Added new task. Start LBA: {}, Offset: {}, Size: {}, Level: {}", new_start_lba, new_offset, new_size, task.level+1);
             self.clear();
             self.sequential_rolling_sort(&mut new_task);
             sum += element_counts_copy[i] as usize;

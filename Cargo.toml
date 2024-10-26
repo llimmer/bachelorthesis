@@ -47,18 +47,6 @@ harness = false
 name = "sort_merge"
 harness = false
 
-[[bench]]
-name = "rolling_sort"
-harness = false
-
-[[bench]]
-name = "external_sort"
-harness = false
-
-[[bench]]
-name = "external_merge"
-harness = false
-
 
 [profile.release]
 debug = true
