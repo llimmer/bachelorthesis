@@ -1,12 +1,13 @@
 use rand::prelude::*;
 use std::{env, io};
-use std::time::Duration;
+use std::error::Error;
+use std::time::{Duration, Instant};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use bachelorthesis::{BLOCKSIZE, sort, THRESHOLD, initialize_thread_pool, NUM_THREADS, prepare_benchmark, rolling_sort, HUGE_PAGE_SIZE_1G, sort_merge_initialize_thread_local};
 
 
-pub fn main() {
+pub fn main() -> Result<(), Box<dyn Error>>{
     let mut args = env::args();
     args.next();
 
@@ -42,9 +43,16 @@ pub fn main() {
     let mut nvme = vroom::init(&pci_addr).unwrap();
     initialize_thread_pool();
     nvme = sort_merge_initialize_thread_local(nvme);
-    nvme = prepare_benchmark(nvme, num_hugepages, seed as usize);
 
-    rolling_sort(nvme, num_hugepages*HUGE_PAGE_SIZE_1G/8).unwrap();
+    for _ in 0..iterations {
+        nvme = prepare_benchmark(nvme, num_hugepages, seed as usize);
+        let start = Instant::now();
+        nvme = rolling_sort(nvme, num_hugepages*HUGE_PAGE_SIZE_1G/8)?;
+        let duration = start.elapsed();
+        measurements.push(duration);
+    }
+
+    Ok(())
 }
 
 fn generate_uniform(rng: &mut StdRng, length: usize) -> Vec<u64> {

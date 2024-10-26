@@ -16,16 +16,16 @@ fn main() -> Result<(), Box<dyn Error>>{
         }
     };
 
-    let len = match args.next() {
+    let num_hugepages = match args.next() {
         Some(arg) => arg.parse::<usize>().unwrap(),
         None => {
             eprintln!("Usage: cargo run --example example_sort_merge <pci bus id> <len?>\nNo length provided. Defaulting to 3 1GiB Hugepages.");
-            3 * HUGE_PAGE_SIZE_1G/8
+            3
         }
     };
 
     let mut nvme = vroom::init(&pci_addr)?;
-    nvme = rolling_sort(nvme, len)?;
+    nvme = rolling_sort(nvme, num_hugepages *HUGE_PAGE_SIZE_1G/8)?;
 
     Ok(())
 }

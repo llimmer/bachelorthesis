@@ -43,7 +43,7 @@ pub fn main() -> Result<(), Box<dyn Error>>{
     };
 
     let mut nvme = vroom::init(&pci_addr)?;
-    let mut measurements: Vec<Duration> = Vec::with_capacity(hugepages.len());
+    let mut measurements: Vec<Vec<Duration>> = Vec::with_capacity(hugepages.len());
 
     for i in 0..hugepages.len() {
         let mut local_measurements: Vec<Duration> = Vec::with_capacity(iterations);
@@ -54,14 +54,16 @@ pub fn main() -> Result<(), Box<dyn Error>>{
             let duration = start.elapsed();
             local_measurements.push(duration);
         }
-        let avg = local_measurements.iter().sum::<Duration>() / iterations as u32;
-        measurements.push(avg);
+        measurements.push(local_measurements);
     }
-    // print as table
+    for i in 0..hugepages.len() {
+        let avg = (measurements[i].iter().sum::<Duration>() / iterations as u32).as_secs_f64();
+        let min = measurements[i].iter().min().unwrap().as_secs_f64();
+        let max = measurements[i].iter().max().unwrap().as_secs_f64();
+        println!("Number of hugepages: {:?}: Avg {:?}, Min: {:?}, Max: {:?}", hugepages[i], avg, min, max);
+    }
 
-    println!("Number of hugepages: {:?}", hugepages);
-    // print times in seconds
-    println!("{:?}", measurements.iter().map(|d| d.as_secs_f64()).collect::<Vec<f64>>());
+    println!("all results: {:?}", measurements);
 
     Ok(())
 }
